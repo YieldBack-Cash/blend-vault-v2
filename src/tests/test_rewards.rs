@@ -1,4 +1,4 @@
-#![cfg(test)]
+﻿#![cfg(test)]
 
 use crate::testutils::{assert_approx_eq_abs, create_blend_pool, register_fee_vault, EnvTestUtils};
 use crate::FeeVaultClient;
@@ -78,7 +78,7 @@ fn test_rewards() {
     // -> create initial deposit for Frodo
     let frodo_deposit = 100_0000000;
     usdc_client.mint(&frodo, &frodo_deposit);
-    fee_vault_client.deposit(&frodo, &frodo_deposit);
+    fee_vault_client.deposit(&frodo_deposit, &frodo, &frodo, &frodo);
 
     e.jump_time(1000);
 
@@ -160,7 +160,7 @@ fn test_rewards() {
     // -> use double frodo's balance to remove interest rate effects
     let samwise_deposit = fee_vault_client.get_underlying_tokens(&frodo) * 2;
     usdc_client.mint(&samwise, &samwise_deposit);
-    fee_vault_client.deposit(&samwise, &samwise_deposit);
+    fee_vault_client.deposit(&samwise_deposit, &samwise, &samwise, &samwise);
 
     // -> skip half the reward period
     e.jump_time(xlm_reward_period / 2);
@@ -192,7 +192,7 @@ fn test_rewards() {
     let xlm_reward_data_post_claim = fee_vault_client.get_reward_data(&xlm).unwrap();
     e.jump_time(10);
     let frodo_underlying_balance = fee_vault_client.get_underlying_tokens(&frodo);
-    fee_vault_client.withdraw(&frodo, &frodo_underlying_balance);
+    fee_vault_client.withdraw(&frodo_underlying_balance, &frodo, &frodo, &frodo);
     let xlm_reward_data_post_jump = fee_vault_client.get_reward_data(&xlm).unwrap();
     assert_eq!(
         xlm_reward_data_post_claim.index,
@@ -228,7 +228,7 @@ fn test_rewards() {
     // -> frodo deposits 3x the amount of samwise's deposit to have 3/4 of the shares
     let frodo_deposit = fee_vault_client.get_underlying_tokens(&samwise) * 3;
     usdc_client.mint(&frodo, &frodo_deposit);
-    fee_vault_client.deposit(&frodo, &frodo_deposit);
+    fee_vault_client.deposit(&frodo_deposit, &frodo, &frodo, &frodo);
 
     // -> have samwise and frodo touch their positions every 1/10 period
     // -> have frodo claim at the halfway point
@@ -240,8 +240,8 @@ fn test_rewards() {
         e.jump_time(blnd_reward_period / 10);
         let samwise_temp_withdraw = 10;
         let frodo_temp_withdraw = 30;
-        fee_vault_client.withdraw(&samwise, &samwise_temp_withdraw);
-        fee_vault_client.withdraw(&frodo, &frodo_temp_withdraw);
+        fee_vault_client.withdraw(&samwise_temp_withdraw, &samwise, &samwise, &samwise);
+        fee_vault_client.withdraw(&frodo_temp_withdraw, &frodo, &frodo, &frodo);
         if i == 4 {
             frodo_claimed_2 = fee_vault_client.claim_rewards(&frodo, &blnd, &frodo);
         }
@@ -366,7 +366,7 @@ fn test_rewards() {
 
     // -> have samwise withdraw their position
     let samwise_withdraw = fee_vault_client.get_underlying_tokens(&samwise);
-    fee_vault_client.withdraw(&samwise, &samwise_withdraw);
+    fee_vault_client.withdraw(&samwise_withdraw, &samwise, &samwise, &samwise);
 
     // -> skip the rest of the reward period
     e.jump_time(xlm_reward_period / 2);

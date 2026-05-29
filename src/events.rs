@@ -108,45 +108,21 @@ impl FeeVaultEvents {
         e.events().publish(topics, (reserve_token_ids, amount));
     }
 
-    /// Emitted when the fee config is updated for the fee vault
+    /// Emitted when shares are transferred between users
     ///
-    /// - topics - `["fee_update"]`
-    /// - data - `[rate_type: u32, rate: u32]`
-    pub fn fee_update(e: &Env, rate_type: u32, rate: u32) {
-        let topics = (Symbol::new(&e, "fee_update"),);
-
-        e.events().publish(topics, (rate_type, rate));
-    }
-
-    /// Emitted when vault rewards are set
-    ///
-    /// - topics - `["vault_rewards_set", admin: Address, token: Address]`
-    /// - data - `[reward_amount: i128, expiration: u64]`
-    pub fn vault_rewards_set(
-        e: &Env,
-        admin: &Address,
-        token: &Address,
-        reward_amount: i128,
-        expiration: u64,
-    ) {
-        let topics = (
-            Symbol::new(&e, "vault_rewards_set"),
-            admin.clone(),
-            token.clone(),
-        );
-        e.events().publish(topics, (reward_amount, expiration));
-    }
-
-    /// Emitted when a user claims rewards from the vault
-    ///
-    /// - topics - `["vault_rewards_claim", user: Address, token: Address]`
-    /// - data - `amount: i128`
-    pub fn vault_rewards_claim(e: &Env, user: &Address, token: &Address, amount: i128) {
-        let topics = (
-            Symbol::new(&e, "vault_rewards_claim"),
-            user.clone(),
-            token.clone(),
-        );
+    /// - topics - `["transfer", from: Address, to: Address]`
+    /// - data - `[amount: i128]`
+    pub fn transfer(e: &Env, from: &Address, to: &Address, amount: i128) {
+        let topics = (Symbol::new(e, "transfer"), from.clone(), to.clone());
         e.events().publish(topics, amount);
+    }
+
+    /// Emitted when a spender is approved to transfer shares on behalf of from
+    ///
+    /// - topics - `["approve", from: Address, spender: Address]`
+    /// - data - `[amount: i128, expiration_ledger: u32]`
+    pub fn approve(e: &Env, from: &Address, spender: &Address, amount: i128, expiration_ledger: u32) {
+        let topics = (Symbol::new(e, "approve"), from.clone(), spender.clone());
+        e.events().publish(topics, (amount, expiration_ledger));
     }
 }

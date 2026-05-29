@@ -13,14 +13,12 @@ use soroban_sdk::{
     vec, Address, BytesN, Env, String, Symbol,
 };
 
-/// Defaults to a mock pool with a b_rate of 1_100_000_000 and a take_rate of 0_1000000.
+/// Registers a fee vault contract.
 pub(crate) fn register_fee_vault(
     e: &Env,
     admin: &Address,
     pool: &Address,
     asset: &Address,
-    rate_type: u32,
-    rate: u32,
     signer: Option<Address>,
 ) -> Address {
     e.register(
@@ -29,22 +27,18 @@ pub(crate) fn register_fee_vault(
             admin.clone(),
             pool.clone(),
             asset.clone(),
-            rate_type,
-            rate,
             signer,
         ),
     )
 }
 
-/// Create a test fee vault. If no initial b_rate is provided, it defaults to 1_100_000_000.
-/// Uses a mock pool underneath so no deposits or withdrawls are functional.
+/// Create a test fee vault backed by a mock pool.
+/// If no initial b_rate is provided, defaults to 1_100_000_000_000.
 ///
 /// Returns (vault address, mock pool address, mock token address)
 pub(crate) fn create_test_fee_vault(
     e: &Env,
     admin: &Address,
-    rate_type: u32,
-    rate: u32,
     b_rate: Option<i128>,
 ) -> (Address, Address, Address) {
     let pool =
@@ -52,7 +46,7 @@ pub(crate) fn create_test_fee_vault(
     let asset = e
         .register_stellar_asset_contract_v2(admin.clone())
         .address();
-    let vault = register_fee_vault(e, &admin, &pool, &asset, rate_type, rate, None);
+    let vault = register_fee_vault(e, admin, &pool, &asset, None);
     (vault, pool, asset)
 }
 

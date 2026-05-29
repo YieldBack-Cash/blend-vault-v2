@@ -1,6 +1,6 @@
-#![cfg(test)]
+﻿#![cfg(test)]
 
-use crate::constants::{SCALAR_12, SCALAR_7};
+use crate::constants::SCALAR_12;
 use crate::storage::ONE_DAY_LEDGERS;
 use crate::testutils::{assert_approx_eq_abs, create_blend_pool, register_fee_vault, EnvTestUtils};
 use crate::FeeVaultClient;
@@ -43,7 +43,7 @@ fn test_happy_path() {
     // emits to each reserve token evently, and starts emissions
     let pool = create_blend_pool(&e, &blend_fixture, &bombadil, &usdc_client, &xlm_client);
     let pool_client = PoolClient::new(&e, &pool);
-    let fee_vault = register_fee_vault(&e, &bombadil, &pool, &usdc, 0, 100_0000, None);
+    let fee_vault = register_fee_vault(&e, &bombadil, &pool, &usdc, None);
     let fee_vault_client = FeeVaultClient::new(&e, &fee_vault);
 
     // Setup pool util rate
@@ -121,7 +121,7 @@ fn test_happy_path() {
     usdc_client.mint(&frodo, &starting_balance);
     usdc_client.mint(&samwise, &starting_balance);
 
-    fee_vault_client.deposit(&frodo, &starting_balance);
+    fee_vault_client.deposit(&starting_balance, &frodo, &frodo, &frodo);
     // -> verify deposit auth
     let deposit_request = vec![
         &e,
@@ -139,7 +139,7 @@ fn test_happy_path() {
                 function: AuthorizedFunction::Contract((
                     fee_vault.clone(),
                     Symbol::new(&e, "deposit"),
-                    vec![&e, frodo.to_val(), starting_balance.into_val(&e),]
+                    vec![&e, starting_balance.into_val(&e), frodo.to_val(), frodo.to_val(), frodo.to_val(),]
                 )),
                 sub_invocations: std::vec![AuthorizedInvocation {
                     function: AuthorizedFunction::Contract((
@@ -174,7 +174,7 @@ fn test_happy_path() {
     // gandalf to set bombadil as signer
     fee_vault_client.set_signer(&Some(bombadil.clone()));
 
-    fee_vault_client.deposit(&samwise, &starting_balance);
+    fee_vault_client.deposit(&starting_balance, &samwise, &samwise, &samwise);
     // -> verify deposit auth with signer
     let deposit_request = vec![
         &e,
@@ -187,7 +187,7 @@ fn test_happy_path() {
     let fee_vault_auth_function = AuthorizedFunction::Contract((
         fee_vault.clone(),
         Symbol::new(&e, "deposit"),
-        vec![&e, samwise.to_val(), starting_balance.into_val(&e)],
+        vec![&e, starting_balance.into_val(&e), samwise.to_val(), samwise.to_val(), samwise.to_val()],
     ));
     assert_eq!(
         e.auths(),
@@ -303,25 +303,14 @@ fn test_happy_path() {
     assert_eq!(vault_summary.asset, usdc);
     assert_eq!(vault_summary.admin, gandalf);
     assert_eq!(vault_summary.signer, Some(bombadil.clone()));
-    assert_eq!(vault_summary.fee.rate_type, 0);
-    assert_eq!(vault_summary.fee.rate, 100_0000);
     let frodo_shares = fee_vault_client.get_shares(&frodo);
     let samwise_shares = fee_vault_client.get_shares(&samwise);
     assert_eq!(
         vault_summary.vault.total_shares,
         frodo_shares + samwise_shares
     );
-    assert!(vault_summary.vault.admin_balance > 0);
-    // 5% pool supply rate with 10% vault fee (within 0.1% of 4.5%)
-    assert_approx_eq_abs(vault_summary.est_apr, 0_0450000, 0_0010000);
-
-    // check admin fee accrual does not impact vault b_token tracking
-    let vault_positions = pool_client.get_positions(&fee_vault);
-    let vault_usdc_position = vault_positions.supply.get(0).unwrap();
-    assert_eq!(
-        vault_usdc_position,
-        vault_summary.vault.total_b_tokens + vault_summary.vault.admin_balance
-    );
+    // ~5% pool supply rate, no vault fee (within 0.1% of 5%)
+    assert_approx_eq_abs(vault_summary.est_apr, 0_0500000, 0_0010000);
 
     /*
      * Withdraw from pool
@@ -350,14 +339,11 @@ fn test_happy_path() {
     let merry_profit = merry_final_balance - merry_starting_balance;
 
     // withdraw from fee vault for frodo and samwise
-    // they are expected to receive half of the profit of merry less the 10% vault fee
-    // mul ceil due to rounding down on "merry_profit / 2"
-    let expected_frodo_profit = (merry_profit / 2)
-        .fixed_mul_ceil(0_9000000, SCALAR_7)
-        .unwrap_optimized();
+    // they are expected to receive half of the profit of merry (no vault fee)
+    let expected_frodo_profit = merry_profit / 2;
     let withdraw_amount = starting_balance + expected_frodo_profit;
 
-    fee_vault_client.withdraw(&frodo, &withdraw_amount);
+    fee_vault_client.withdraw(&withdraw_amount, &frodo, &frodo, &frodo);
     // -> verify withdraw auth
     assert_eq!(
         e.auths(),
@@ -367,7 +353,7 @@ fn test_happy_path() {
                 function: AuthorizedFunction::Contract((
                     fee_vault.clone(),
                     Symbol::new(&e, "withdraw"),
-                    vec![&e, frodo.to_val(), withdraw_amount.into_val(&e),]
+                    vec![&e, withdraw_amount.into_val(&e), frodo.to_val(), frodo.to_val(), frodo.to_val(),]
                 )),
                 sub_invocations: std::vec![]
             }
@@ -375,7 +361,7 @@ fn test_happy_path() {
     );
 
     // -> verify over withdraw is pulled down to full balance
-    fee_vault_client.withdraw(&samwise, &(withdraw_amount * 2));
+    fee_vault_client.withdraw(&(withdraw_amount * 2), &samwise, &samwise, &samwise);
 
     // -> verify withdraw
     assert_eq!(usdc_client.balance(&frodo), withdraw_amount);
@@ -384,46 +370,20 @@ fn test_happy_path() {
     assert_eq!(fee_vault_client.get_shares(&samwise), 0);
 
     // -> verify withdraw from empty vault fails
-    let result = fee_vault_client.try_withdraw(&samwise, &1);
+    let result = fee_vault_client.try_withdraw(&1, &samwise, &samwise, &samwise);
     assert_eq!(result.err(), Some(Ok(Error::from_contract_error(10))));
 
     /*
-     * Admin claim fees and emissions
-     * -> admin claim fees for usdc
+     * Admin claim emissions
      * -> claim emissions for the deposit
      */
 
-    // claim fees for usdc
-    let expected_fees = merry_profit
-        .fixed_mul_floor(0_1000000, SCALAR_7)
-        .unwrap_optimized();
-    fee_vault_client.admin_withdraw(&expected_fees);
-
-    // -> verify claim fees auth
-    assert_eq!(
-        e.auths()[0],
-        (
-            gandalf.clone(),
-            AuthorizedInvocation {
-                function: AuthorizedFunction::Contract((
-                    fee_vault.clone(),
-                    Symbol::new(&e, "admin_withdraw"),
-                    vec![&e, expected_fees.into_val(&e)]
-                )),
-                sub_invocations: std::vec![]
-            }
-        )
-    );
-
-    // -> verify claim fees
-    assert_eq!(usdc_client.balance(&gandalf), expected_fees);
     // -> verify vault position is empty and fully unwound
     assert!(pool_client.get_positions(&fee_vault).supply.is_empty());
     // -> verify internal vault tracking is empty
     let reserve_vault = fee_vault_client.get_vault();
     assert_eq!(reserve_vault.total_b_tokens, 0);
     assert_eq!(reserve_vault.total_shares, 0);
-    assert_eq!(reserve_vault.admin_balance, 0);
 
     // claim emissions for merry
     let reserve_token_ids = vec![&e, 1];
