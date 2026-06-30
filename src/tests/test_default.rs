@@ -39,7 +39,7 @@ fn test_default() {
     // emits to each reserve token evenly, and starts emissions
     let pool = create_blend_pool(&e, &blend_fixture, &bombadil, &usdc_client, &xlm_client);
     let pool_client = PoolClient::new(&e, &pool);
-    let fee_vault = register_fee_vault(&e, &bombadil, &pool, &usdc, None);
+    let fee_vault = register_fee_vault(&e, &bombadil, &pool, &usdc, None, None);
     let fee_vault_usdc_client = FeeVaultClient::new(&e, &fee_vault);
 
     // Setup pool util rate

@@ -1,6 +1,6 @@
 use soroban_sdk::{contracttype, panic_with_error, unwrap::UnwrapOptimized, Address, Env, Symbol};
 
-use crate::{errors::FeeVaultError, vault::VaultData};
+use crate::{constants::BLND_TOKEN, errors::FeeVaultError, vault::VaultData};
 
 //********** Storage Keys **********//
 
@@ -9,6 +9,7 @@ const ADMIN_KEY: &str = "Admin";
 const ASSET_KEY: &str = "Asset";
 const SIGNER_KEY: &str = "Signer";
 const VAULT_DATA_KEY: &str = "Vault";
+const ROUTER_KEY: &str = "Router";
 
 #[derive(Clone)]
 #[contracttype]
@@ -114,6 +115,44 @@ pub fn del_signer(e: &Env) {
     e.storage()
         .instance()
         .remove::<Symbol>(&Symbol::new(e, SIGNER_KEY));
+}
+
+/// Get the Soroswap router address. Returns None if not configured.
+pub fn get_router(e: &Env) -> Option<Address> {
+    e.storage()
+        .instance()
+        .get::<Symbol, Address>(&Symbol::new(e, ROUTER_KEY))
+}
+
+/// Set the Soroswap router address.
+pub fn set_router(e: &Env, router: Address) {
+    e.storage()
+        .instance()
+        .set::<Symbol, Address>(&Symbol::new(e, ROUTER_KEY), &router);
+}
+
+/// Get the BLND token address from the hardcoded network constant.
+/// In test builds, returns a stored override if one was set via `set_blnd_token_for_test`.
+pub fn get_blnd_token(e: &Env) -> Address {
+    #[cfg(test)]
+    if let Some(addr) = e
+        .storage()
+        .instance()
+        .get::<Symbol, Address>(&Symbol::new(e, "TestBlnd"))
+    {
+        return addr;
+    }
+    Address::from_str(e, BLND_TOKEN)
+}
+
+/// Store a BLND token override for the current contract instance.
+/// Only compiled in test builds — allows tests to inject the dynamically registered BLND address
+/// instead of the hardcoded network constant.
+#[cfg(test)]
+pub fn set_blnd_token_for_test(e: &Env, addr: &Address) {
+    e.storage()
+        .instance()
+        .set::<Symbol, Address>(&Symbol::new(e, "TestBlnd"), addr);
 }
 
 /********** Persistent **********/

@@ -154,7 +154,7 @@ mod tests {
             reserve_data,
         );
 
-        let fee_vault = register_fee_vault(&e, &bombadil, &pool_client.address, &token, None);
+        let fee_vault = register_fee_vault(&e, &bombadil, &pool_client.address, &token, None, None);
 
         e.as_contract(&fee_vault, || {
             let vault_data = VaultData {

@@ -74,3 +74,19 @@ pub fn claim(e: &Env, pool: &Address, reserve_token_ids: &Vec<u32>, to: &Address
 pub fn reserve_b_rate(e: &Env, pool: &Address, reserve: &Address) -> i128 {
     PoolClient::new(&e, &pool).get_reserve(reserve).data.b_rate
 }
+
+/// Returns the emission token ID for the reserve's supply (bToken) position.
+/// Token ID = reserve_index * 2 + 1
+pub fn reserve_supply_token_id(e: &Env, pool: &Address, reserve: &Address) -> u32 {
+    PoolClient::new(e, pool).get_reserve(reserve).config.index * 2 + 1
+}
+
+/// Returns the vault's actual bToken balance for a reserve by reading the pool's positions.
+pub fn vault_b_token_balance(e: &Env, pool: &Address, reserve: &Address, vault: &Address) -> i128 {
+    let reserve_index = PoolClient::new(e, pool).get_reserve(reserve).config.index;
+    PoolClient::new(e, pool)
+        .get_positions(vault)
+        .supply
+        .get(reserve_index)
+        .unwrap_or(0)
+}

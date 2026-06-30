@@ -23,8 +23,8 @@ fn test_constructor_ok() {
     let init_b_rate = 1_000_000_000_000;
     let pool = mockpool::register_mock_pool_with_b_rate(&e, init_b_rate).address;
     let reserve = Address::generate(&e);
-
-    let vault_address = register_fee_vault(&e, &samwise, &pool, &reserve, Some(frodo.clone()));
+    let vault_address =
+        register_fee_vault(&e, &samwise, &pool, &reserve, Some(frodo.clone()), None);
 
     assert_eq!(
         e.auths()[0],
@@ -40,6 +40,7 @@ fn test_constructor_ok() {
                         pool.into_val(&e),
                         reserve.into_val(&e),
                         Some(frodo.clone()).into_val(&e),
+                        Option::<Address>::None.into_val(&e),
                     ]
                 )),
                 sub_invocations: std::vec![]
@@ -71,7 +72,7 @@ fn test_get_b_tokens() {
     let pool = mockpool::register_mock_pool_with_b_rate(&e, init_b_rate).address;
     let reserve = Address::generate(&e);
 
-    let vault_address = register_fee_vault(&e, &samwise, &pool, &reserve, None);
+    let vault_address = register_fee_vault(&e, &samwise, &pool, &reserve, None, None);
     let vault_client = FeeVaultClient::new(&e, &vault_address);
     let mock_client = mockpool::MockPoolClient::new(&e, &pool);
 
@@ -124,7 +125,7 @@ fn test_underlying_wrappers() {
     let pool = mockpool::register_mock_pool_with_b_rate(&e, init_b_rate).address;
     let reserve = Address::generate(&e);
 
-    let vault_address = register_fee_vault(&e, &samwise, &pool, &reserve, None);
+    let vault_address = register_fee_vault(&e, &samwise, &pool, &reserve, None, None);
     let vault_client = FeeVaultClient::new(&e, &vault_address);
     let mock_client = mockpool::MockPoolClient::new(&e, &pool);
 
@@ -185,7 +186,7 @@ fn test_set_admin() {
     let pool = mockpool::register_mock_pool_with_b_rate(&e, init_b_rate).address;
     let reserve = Address::generate(&e);
 
-    let vault_address = register_fee_vault(&e, &samwise, &pool, &reserve, None);
+    let vault_address = register_fee_vault(&e, &samwise, &pool, &reserve, None, None);
     let vault_client = FeeVaultClient::new(&e, &vault_address);
 
     e.as_contract(&vault_address, || {
@@ -247,7 +248,8 @@ fn test_set_signer() {
     let pool = mockpool::register_mock_pool_with_b_rate(&e, init_b_rate).address;
     let reserve = Address::generate(&e);
 
-    let vault_address = register_fee_vault(&e, &samwise, &pool, &reserve, Some(merry.clone()));
+    let vault_address =
+        register_fee_vault(&e, &samwise, &pool, &reserve, Some(merry.clone()), None);
     let vault_client = FeeVaultClient::new(&e, &vault_address);
 
     e.as_contract(&vault_address, || {

@@ -33,7 +33,6 @@ fn test_happy_path() {
     let xlm = e
         .register_stellar_asset_contract_v2(bombadil.clone())
         .address();
-    let blnd_client = MockTokenClient::new(&e, &blnd);
     let usdc_client = MockTokenClient::new(&e, &usdc);
     let xlm_client = MockTokenClient::new(&e, &xlm);
 
@@ -43,7 +42,7 @@ fn test_happy_path() {
     // emits to each reserve token evently, and starts emissions
     let pool = create_blend_pool(&e, &blend_fixture, &bombadil, &usdc_client, &xlm_client);
     let pool_client = PoolClient::new(&e, &pool);
-    let fee_vault = register_fee_vault(&e, &bombadil, &pool, &usdc, None);
+    let fee_vault = register_fee_vault(&e, &bombadil, &pool, &usdc, None, None);
     let fee_vault_client = FeeVaultClient::new(&e, &fee_vault);
 
     // Setup pool util rate
@@ -373,43 +372,13 @@ fn test_happy_path() {
     let result = fee_vault_client.try_withdraw(&1, &samwise, &samwise, &samwise);
     assert_eq!(result.err(), Some(Ok(Error::from_contract_error(10))));
 
-    /*
-     * Admin claim emissions
-     * -> claim emissions for the deposit
-     */
-
     // -> verify vault position is empty and fully unwound
     assert!(pool_client.get_positions(&fee_vault).supply.is_empty());
-    // -> verify internal vault tracking is empty
     let reserve_vault = fee_vault_client.get_vault();
     assert_eq!(reserve_vault.total_b_tokens, 0);
     assert_eq!(reserve_vault.total_shares, 0);
 
-    // claim emissions for merry
-    let reserve_token_ids = vec![&e, 1];
-    pool_client.claim(&merry, &reserve_token_ids, &merry);
-    let merry_emissions = blnd_client.balance(&merry);
-
-    // admin claim emissions
-    let claim_result = fee_vault_client.claim_emissions(&reserve_token_ids, &gandalf);
-
-    // -> verify claim emissions auth
-    assert_eq!(
-        e.auths()[0],
-        (
-            gandalf.clone(),
-            AuthorizedInvocation {
-                function: AuthorizedFunction::Contract((
-                    fee_vault.clone(),
-                    Symbol::new(&e, "claim_emissions"),
-                    vec![&e, reserve_token_ids.to_val(), gandalf.to_val(),]
-                )),
-                sub_invocations: std::vec![]
-            }
-        )
-    );
-
-    // -> verify claim emissions
-    assert_eq!(blnd_client.balance(&gandalf), claim_result);
-    assert_eq!(merry_emissions, claim_result);
+    // vault claim_emissions requires a Soroswap router — panics without one
+    let result = fee_vault_client.try_claim_emissions(&0);
+    assert_eq!(result.err(), Some(Ok(Error::from_contract_error(113))));
 }

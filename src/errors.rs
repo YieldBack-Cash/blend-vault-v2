@@ -16,4 +16,5 @@ pub enum FeeVaultError {
     InvalidBTokensBurnt = 107,
     InvalidSharesMinted = 108,
     InvalidSharesBurnt = 112,
+    SwapNotConfigured = 113,
 }

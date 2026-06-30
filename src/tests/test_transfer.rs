@@ -52,7 +52,7 @@ fn setup(e: &Env, frodo_deposit: i128) -> Fixture<'_> {
         ],
     );
 
-    let fee_vault = register_fee_vault(e, &gandalf, &pool, &usdc, None);
+    let fee_vault = register_fee_vault(e, &gandalf, &pool, &usdc, None, None);
     let fee_vault_client = FeeVaultClient::new(e, &fee_vault);
 
     usdc_client.mint(&frodo, &frodo_deposit);

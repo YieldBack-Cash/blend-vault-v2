@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Env, Symbol, Vec};
+use soroban_sdk::{Address, Env, Symbol};
 
 pub struct FeeVaultEvents {}
 
@@ -89,23 +89,18 @@ impl FeeVaultEvents {
         e.events().publish(topics, (amount, b_tokens));
     }
 
-    /// Emitted when emissions are claimed
+    /// Emitted when BLND emissions are claimed, swapped, and supplied back into the vault
     ///
-    /// - topics - `["vault_emissions_claim", pool: Address, admin: Address]`
-    /// - data - `[reserve_token_ids: i128, amount: i128]`
+    /// - topics - `["vault_emissions_claim", pool: Address]`
+    /// - data - `[blnd_claimed: i128, underlying_received: i128]`
     pub fn vault_emissions_claim(
         e: &Env,
-        admin: &Address,
         pool: &Address,
-        reserve_token_ids: Vec<u32>,
-        amount: i128,
+        blnd_claimed: i128,
+        underlying_received: i128,
     ) {
-        let topics = (
-            Symbol::new(&e, "vault_emissions_claim"),
-            pool.clone(),
-            admin.clone(),
-        );
-        e.events().publish(topics, (reserve_token_ids, amount));
+        let topics = (Symbol::new(e, "vault_emissions_claim"), pool.clone());
+        e.events().publish(topics, (blnd_claimed, underlying_received));
     }
 
     /// Emitted when shares are transferred between users

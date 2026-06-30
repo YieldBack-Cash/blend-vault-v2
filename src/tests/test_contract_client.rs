@@ -59,7 +59,7 @@ fn setup_blend(e: &Env) -> (Address, MockTokenClient, Address, Address) {
     let blend_fixture = BlendFixture::deploy(e, &bombadil, &blnd, &usdc);
     let pool = create_blend_pool(e, &blend_fixture, &bombadil, &usdc_client, &xlm_client);
 
-    let vault = register_fee_vault(e, &bombadil, &pool, &usdc, None);
+    let vault = register_fee_vault(e, &bombadil, &pool, &usdc, None, None);
 
     usdc_client.mint(&frodo, &10_000_0000000);
     usdc_client.mint(&samwise, &10_000_0000000);
@@ -77,7 +77,7 @@ fn setup_mock(e: &Env) -> (Address, Address, Address, Address) {
     let b_rate = 1_000_000_000_000_i128;
     let pool = mockpool::register_mock_pool_with_b_rate(e, b_rate).address;
     let reserve = Address::generate(e);
-    let vault = register_fee_vault(e, &admin, &pool, &reserve, None);
+    let vault = register_fee_vault(e, &admin, &pool, &reserve, None, None);
 
     e.as_contract(&vault, || {
         storage::set_vault_data(

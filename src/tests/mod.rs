@@ -1,3 +1,4 @@
+mod test_claim_emissions;
 mod test_contract_client;
 mod test_default;
 mod test_entrypoints;

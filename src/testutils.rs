@@ -20,6 +20,7 @@ pub(crate) fn register_fee_vault(
     pool: &Address,
     asset: &Address,
     signer: Option<Address>,
+    router: Option<Address>,
 ) -> Address {
     e.register(
         FeeVault {},
@@ -28,6 +29,7 @@ pub(crate) fn register_fee_vault(
             pool.clone(),
             asset.clone(),
             signer,
+            router,
         ),
     )
 }
@@ -46,7 +48,7 @@ pub(crate) fn create_test_fee_vault(
     let asset = e
         .register_stellar_asset_contract_v2(admin.clone())
         .address();
-    let vault = register_fee_vault(e, admin, &pool, &asset, None);
+    let vault = register_fee_vault(e, admin, &pool, &asset, None, None);
     (vault, pool, asset)
 }
 
@@ -89,7 +91,7 @@ pub(crate) fn create_blend_pool(
     let pool_client = PoolClient::new(e, &pool);
     blend_fixture
         .backstop
-        .deposit(&admin, &pool, &20_0000_0000000);
+        .deposit(&admin, &pool, &50_000_0000000);
     let reserve_config = ReserveConfig {
         c_factor: 900_0000,
         decimals: 7,
@@ -139,6 +141,7 @@ pub(crate) fn create_blend_pool(
     // wait a week and start emissions
     e.jump(ONE_DAY_LEDGERS * 7);
     blend_fixture.emitter.distribute();
+    blend_fixture.backstop.distribute();
     return pool;
 }
 
@@ -234,6 +237,41 @@ pub fn create_mock_oracle<'a>(e: &Env) -> (Address, MockPriceOracleClient<'a>) {
         contract_id.clone(),
         MockPriceOracleClient::new(e, &contract_id),
     )
+}
+
+/// Mock Soroswap router for claim_emissions integration tests.
+/// Performs a 1:1 swap of token_in → token_out from its pre-funded balance.
+pub mod mocksoroswap {
+    use sep_41_token::TokenClient;
+    use soroban_sdk::{contract, contractimpl, Address, Env, Vec};
+
+    #[contract]
+    pub struct MockSoroswapRouter;
+
+    #[contractimpl]
+    impl MockSoroswapRouter {
+        pub fn swap_exact_tokens_for_tokens(
+            e: Env,
+            amount_in: i128,
+            _amount_out_min: i128,
+            path: Vec<Address>,
+            to: Address,
+            _deadline: u64,
+        ) -> Vec<i128> {
+            let token_out = path.get(1).unwrap();
+            TokenClient::new(&e, &token_out).transfer(
+                &e.current_contract_address(),
+                &to,
+                &amount_in,
+            );
+            soroban_sdk::vec![&e, amount_in, amount_in]
+        }
+    }
+
+    pub fn register_mock_soroswap_router(e: &soroban_sdk::Env) -> MockSoroswapRouterClient {
+        let addr = e.register(MockSoroswapRouter {}, ());
+        MockSoroswapRouterClient::new(e, &addr)
+    }
 }
 
 /// Mock pool to test b_rate updates

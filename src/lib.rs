@@ -12,6 +12,7 @@ pub mod events;
 pub mod pool;
 pub mod storage;
 pub mod summary;
+pub mod swap;
 pub mod validator;
 pub mod vault;
 

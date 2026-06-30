@@ -1,14 +1,16 @@
 use crate::{
     errors::FeeVaultError,
     events::FeeVaultEvents,
-    pool,
-    storage,
+    pool, storage, swap,
     summary::VaultSummary,
     validator::require_positive,
     vault::{self, VaultData},
 };
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, String, Vec};
+use soroban_sdk::{
+    auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
+    contract, contractimpl, panic_with_error, vec, Address, Env, IntoVal, String, Symbol,
+};
 
 #[contract]
 pub struct FeeVault;
@@ -28,6 +30,7 @@ impl FeeVault {
         pool: Address,
         asset: Address,
         signer: Option<Address>,
+        router: Option<Address>,
     ) {
         admin.require_auth();
 
@@ -37,6 +40,9 @@ impl FeeVault {
 
         if let Some(signer) = signer {
             storage::set_signer(&e, signer);
+        }
+        if let Some(router) = router {
+            storage::set_router(&e, router);
         }
         storage::set_vault_data(
             &e,
@@ -226,23 +232,68 @@ impl FeeVault {
     }
 
     /// ADMIN ONLY
-    /// Claims emissions for the given reserves from the pool.
+    /// Sets the Soroswap router address used for harvesting BLND emissions.
     ///
     /// ### Arguments
-    /// * `reserve_token_ids` - The ids of the reserves to claim emissions for
-    /// * `to` - The address to send the emissions to
+    /// * `router` - The Soroswap router contract address
+    pub fn set_router(e: Env, router: Address) {
+        storage::extend_instance(&e);
+        storage::get_admin(&e).require_auth();
+        storage::set_router(&e, router);
+    }
+
+    /// Claims accrued BLND emissions from the pool, swaps them for the underlying
+    /// asset via Soroswap, and supplies the proceeds back into the pool. Every
+    /// depositor's share value increases automatically — no manual distribution needed.
+    ///
+    /// ### Arguments
+    /// * `amount_out_min` - Minimum underlying tokens to accept from the swap (slippage floor)
     ///
     /// ### Returns
-    /// * `i128` - The amount of blnd tokens claimed
-    pub fn claim_emissions(e: Env, reserve_token_ids: Vec<u32>, to: Address) -> i128 {
+    /// * `i128` - The amount of underlying tokens received and re-supplied
+    pub fn claim_emissions(e: Env, amount_out_min: i128) -> i128 {
         storage::extend_instance(&e);
-        let admin = storage::get_admin(&e);
-        admin.require_auth();
         let pool = storage::get_pool(&e);
-        let emissions = pool::claim(&e, &pool, &reserve_token_ids, &to);
+        let asset = storage::get_asset(&e);
+        let blnd = storage::get_blnd_token(&e);
+        let router = storage::get_router(&e)
+            .unwrap_or_else(|| panic_with_error!(&e, FeeVaultError::SwapNotConfigured));
 
-        FeeVaultEvents::vault_emissions_claim(&e, &pool, &admin, reserve_token_ids, emissions);
-        emissions
+        let supply_token_id = pool::reserve_supply_token_id(&e, &pool, &asset);
+        let blnd_claimed = pool::claim(
+            &e,
+            &pool,
+            &vec![&e, supply_token_id],
+            &e.current_contract_address(),
+        );
+        if blnd_claimed == 0 {
+            return 0;
+        }
+
+        let underlying_received =
+            swap::swap_blnd_for_asset(&e, &router, &blnd, &asset, blnd_claimed, amount_out_min);
+
+        let vault = e.current_contract_address();
+        e.authorize_as_current_contract(vec![
+            &e,
+            InvokerContractAuthEntry::Contract(SubContractInvocation {
+                context: ContractContext {
+                    contract: asset.clone(),
+                    fn_name: Symbol::new(&e, "transfer"),
+                    args: (vault.clone(), pool.clone(), underlying_received).into_val(&e),
+                },
+                sub_invocations: vec![&e],
+            }),
+        ]);
+        pool::supply(&e, &pool, &asset, &vault, underlying_received);
+
+        let mut vault = vault::get_vault_updated(&e, &pool, &asset);
+        vault.total_b_tokens =
+            pool::vault_b_token_balance(&e, &pool, &asset, &e.current_contract_address());
+        storage::set_vault_data(&e, &vault);
+
+        FeeVaultEvents::vault_emissions_claim(&e, &pool, blnd_claimed, underlying_received);
+        underlying_received
     }
 
     //********** Read-Write ***********//
