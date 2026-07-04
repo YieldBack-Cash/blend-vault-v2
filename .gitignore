@@ -8,3 +8,5 @@ test_snapshots/
 local.*
 
 /js
+
+./.stellar

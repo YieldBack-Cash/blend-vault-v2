@@ -3,9 +3,9 @@
 use crate::{
     constants::SCALAR_12,
     storage,
-    testutils::{assert_approx_eq_rel, mockpool, register_fee_vault, EnvTestUtils},
+    testutils::{assert_approx_eq_rel, mockpool, register_blend_vault, EnvTestUtils},
     vault::VaultData,
-    FeeVaultClient,
+    BlendVaultClient,
 };
 use soroban_sdk::{
     testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation},
@@ -23,8 +23,8 @@ fn test_constructor_ok() {
     let init_b_rate = 1_000_000_000_000;
     let pool = mockpool::register_mock_pool_with_b_rate(&e, init_b_rate).address;
     let reserve = Address::generate(&e);
-    let vault_address =
-        register_fee_vault(&e, &samwise, &pool, &reserve, Some(frodo.clone()), None);
+    let blnd_token = Address::generate(&e);
+    let vault_address = register_blend_vault(&e, &samwise, &pool, &reserve, &blnd_token);
 
     assert_eq!(
         e.auths()[0],
@@ -39,8 +39,7 @@ fn test_constructor_ok() {
                         samwise.into_val(&e),
                         pool.into_val(&e),
                         reserve.into_val(&e),
-                        Some(frodo.clone()).into_val(&e),
-                        Option::<Address>::None.into_val(&e),
+                        blnd_token.into_val(&e),
                     ]
                 )),
                 sub_invocations: std::vec![]
@@ -48,7 +47,9 @@ fn test_constructor_ok() {
         )
     );
 
-    let client = FeeVaultClient::new(&e, &vault_address);
+    let client = BlendVaultClient::new(&e, &vault_address);
+    client.set_signer(&Some(frodo.clone()));
+
     assert_eq!(client.get_config(), (pool, reserve));
     assert_eq!(client.get_admin(), samwise);
     assert_eq!(client.get_signer(), Some(frodo));
@@ -71,9 +72,10 @@ fn test_get_b_tokens() {
     let init_b_rate = 1_000_000_000_000;
     let pool = mockpool::register_mock_pool_with_b_rate(&e, init_b_rate).address;
     let reserve = Address::generate(&e);
+    let blnd_token = Address::generate(&e);
 
-    let vault_address = register_fee_vault(&e, &samwise, &pool, &reserve, None, None);
-    let vault_client = FeeVaultClient::new(&e, &vault_address);
+    let vault_address = register_blend_vault(&e, &samwise, &pool, &reserve, &blnd_token);
+    let vault_client = BlendVaultClient::new(&e, &vault_address);
     let mock_client = mockpool::MockPoolClient::new(&e, &pool);
 
     e.as_contract(&vault_address, || {
@@ -124,9 +126,10 @@ fn test_underlying_wrappers() {
     let init_b_rate = 1_000_000_000_000;
     let pool = mockpool::register_mock_pool_with_b_rate(&e, init_b_rate).address;
     let reserve = Address::generate(&e);
+    let blnd_token = Address::generate(&e);
 
-    let vault_address = register_fee_vault(&e, &samwise, &pool, &reserve, None, None);
-    let vault_client = FeeVaultClient::new(&e, &vault_address);
+    let vault_address = register_blend_vault(&e, &samwise, &pool, &reserve, &blnd_token);
+    let vault_client = BlendVaultClient::new(&e, &vault_address);
     let mock_client = mockpool::MockPoolClient::new(&e, &pool);
 
     e.as_contract(&vault_address, || {
@@ -185,9 +188,10 @@ fn test_set_admin() {
     let init_b_rate = 1_000_000_000_000;
     let pool = mockpool::register_mock_pool_with_b_rate(&e, init_b_rate).address;
     let reserve = Address::generate(&e);
+    let blnd_token = Address::generate(&e);
 
-    let vault_address = register_fee_vault(&e, &samwise, &pool, &reserve, None, None);
-    let vault_client = FeeVaultClient::new(&e, &vault_address);
+    let vault_address = register_blend_vault(&e, &samwise, &pool, &reserve, &blnd_token);
+    let vault_client = BlendVaultClient::new(&e, &vault_address);
 
     e.as_contract(&vault_address, || {
         assert_eq!(storage::get_admin(&e), samwise.clone());
@@ -247,10 +251,11 @@ fn test_set_signer() {
     let init_b_rate = 1_000_000_000_000;
     let pool = mockpool::register_mock_pool_with_b_rate(&e, init_b_rate).address;
     let reserve = Address::generate(&e);
+    let blnd_token = Address::generate(&e);
 
-    let vault_address =
-        register_fee_vault(&e, &samwise, &pool, &reserve, Some(merry.clone()), None);
-    let vault_client = FeeVaultClient::new(&e, &vault_address);
+    let vault_address = register_blend_vault(&e, &samwise, &pool, &reserve, &blnd_token);
+    let vault_client = BlendVaultClient::new(&e, &vault_address);
+    vault_client.set_signer(&Some(merry.clone()));
 
     e.as_contract(&vault_address, || {
         assert_eq!(storage::get_signer(&e), Some(merry.clone()));

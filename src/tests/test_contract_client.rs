@@ -3,10 +3,10 @@
 use crate::{
     storage,
     testutils::{
-        assert_approx_eq_rel, create_blend_pool, mockpool, register_fee_vault, EnvTestUtils,
+        assert_approx_eq_rel, create_blend_pool, mockpool, register_blend_vault, EnvTestUtils,
     },
     vault::VaultData,
-    FeeVaultClient,
+    BlendVaultClient,
 };
 use blend_contract_sdk::testutils::BlendFixture;
 use sep_41_token::testutils::MockTokenClient;
@@ -15,7 +15,7 @@ use soroban_sdk::{contractclient, testutils::Address as _, Address, Env};
 /// OZ-style ERC-4626 interface used to generate VaultContractClient.
 ///
 /// The client dispatches calls by function name on whatever contract address is
-/// passed. Functions whose name AND argument types match FeeVault's on-chain ABI
+/// passed. Functions whose name AND argument types match BlendVault's on-chain ABI
 /// will succeed; mismatched signatures will return an error at the host level.
 #[contractclient(name = "VaultContractClient")]
 pub trait VaultTrait {
@@ -39,7 +39,7 @@ pub trait VaultTrait {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-/// Sets up a full Blend pool + fee vault with usdc as the asset.
+/// Sets up a full Blend pool + blend vault with usdc as the asset.
 /// Returns (vault_address, usdc_client, frodo, samwise).
 fn setup_blend(e: &Env) -> (Address, MockTokenClient, Address, Address) {
     e.cost_estimate().budget().reset_unlimited();
@@ -59,7 +59,7 @@ fn setup_blend(e: &Env) -> (Address, MockTokenClient, Address, Address) {
     let blend_fixture = BlendFixture::deploy(e, &bombadil, &blnd, &usdc);
     let pool = create_blend_pool(e, &blend_fixture, &bombadil, &usdc_client, &xlm_client);
 
-    let vault = register_fee_vault(e, &bombadil, &pool, &usdc, None, None);
+    let vault = register_blend_vault(e, &bombadil, &pool, &usdc, &blnd);
 
     usdc_client.mint(&frodo, &10_000_0000000);
     usdc_client.mint(&samwise, &10_000_0000000);
@@ -77,7 +77,8 @@ fn setup_mock(e: &Env) -> (Address, Address, Address, Address) {
     let b_rate = 1_000_000_000_000_i128;
     let pool = mockpool::register_mock_pool_with_b_rate(e, b_rate).address;
     let reserve = Address::generate(e);
-    let vault = register_fee_vault(e, &admin, &pool, &reserve, None, None);
+    let blnd_token = Address::generate(e);
+    let vault = register_blend_vault(e, &admin, &pool, &reserve, &blnd_token);
 
     e.as_contract(&vault, || {
         storage::set_vault_data(
@@ -100,7 +101,7 @@ fn setup_mock(e: &Env) -> (Address, Address, Address, Address) {
 // ── convert_to_assets ─────────────────────────────────────────────────────────
 
 /// VaultContractClient::convert_to_assets produces the same result as
-/// FeeVaultClient::get_underlying_tokens for each user's share balance.
+/// BlendVaultClient::get_underlying_tokens for each user's share balance.
 #[test]
 fn test_convert_to_assets_matches_underlying_tokens() {
     let e = Env::default();
@@ -108,7 +109,7 @@ fn test_convert_to_assets_matches_underlying_tokens() {
     e.set_default_info();
 
     let (vault, _pool, samwise, frodo) = setup_mock(&e);
-    let fee_client = FeeVaultClient::new(&e, &vault);
+    let fee_client = BlendVaultClient::new(&e, &vault);
     let oz_client = VaultContractClient::new(&e, &vault);
 
     let samwise_shares = fee_client.get_shares(&samwise);
@@ -127,13 +128,13 @@ fn test_convert_to_assets_matches_underlying_tokens() {
 /// Both clients call the same on-chain function, so they must always agree for
 /// any arbitrary share amount.
 #[test]
-fn test_convert_to_assets_agrees_with_fee_vault_client() {
+fn test_convert_to_assets_agrees_with_blend_vault_client() {
     let e = Env::default();
     e.mock_all_auths();
     e.set_default_info();
 
     let (vault, _pool, _samwise, _frodo) = setup_mock(&e);
-    let fee_client = FeeVaultClient::new(&e, &vault);
+    let fee_client = BlendVaultClient::new(&e, &vault);
     let oz_client = VaultContractClient::new(&e, &vault);
 
     for shares in [0_i128, 1, 120_0000000, 600_0000000, 1080_0000000, 1200_0000000] {
@@ -154,7 +155,7 @@ fn test_convert_to_assets_reflects_rate_change() {
     e.set_default_info();
 
     let (vault, pool, samwise, _frodo) = setup_mock(&e);
-    let fee_client = FeeVaultClient::new(&e, &vault);
+    let fee_client = BlendVaultClient::new(&e, &vault);
     let oz_client = VaultContractClient::new(&e, &vault);
 
     let shares = fee_client.get_shares(&samwise);
@@ -183,14 +184,14 @@ fn test_convert_to_assets_zero_shares() {
 
 // ── deposit ───────────────────────────────────────────────────────────────────
 
-/// VaultContractClient::deposit now matches FeeVault::deposit's signature
+/// VaultContractClient::deposit now matches BlendVault::deposit's signature
 /// and can execute a real deposit end-to-end.
 #[test]
 fn test_deposit_via_contract_client() {
     let e = Env::default();
     let (vault, _usdc, frodo, _samwise) = setup_blend(&e);
 
-    let fee_client = FeeVaultClient::new(&e, &vault);
+    let fee_client = BlendVaultClient::new(&e, &vault);
     let oz_client = VaultContractClient::new(&e, &vault);
 
     let deposit_amount = 1_000_0000000_i128;
@@ -213,7 +214,7 @@ fn test_deposit_split_receiver_and_from() {
     let e = Env::default();
     let (vault, _usdc, frodo, samwise) = setup_blend(&e);
 
-    let fee_client = FeeVaultClient::new(&e, &vault);
+    let fee_client = BlendVaultClient::new(&e, &vault);
     let oz_client = VaultContractClient::new(&e, &vault);
 
     let deposit_amount = 1_000_0000000_i128;
@@ -228,14 +229,14 @@ fn test_deposit_split_receiver_and_from() {
 
 // ── withdraw ──────────────────────────────────────────────────────────────────
 
-/// VaultContractClient::withdraw matches FeeVault::withdraw's signature
+/// VaultContractClient::withdraw matches BlendVault::withdraw's signature
 /// and can execute a real withdrawal end-to-end.
 #[test]
 fn test_withdraw_via_contract_client() {
     let e = Env::default();
     let (vault, usdc, frodo, _samwise) = setup_blend(&e);
 
-    let fee_client = FeeVaultClient::new(&e, &vault);
+    let fee_client = BlendVaultClient::new(&e, &vault);
     let oz_client = VaultContractClient::new(&e, &vault);
 
     let deposit_amount = 1_000_0000000_i128;
@@ -257,7 +258,7 @@ fn test_withdraw_split_receiver_and_owner() {
     let e = Env::default();
     let (vault, usdc, frodo, samwise) = setup_blend(&e);
 
-    let fee_client = FeeVaultClient::new(&e, &vault);
+    let fee_client = BlendVaultClient::new(&e, &vault);
     let oz_client = VaultContractClient::new(&e, &vault);
 
     let deposit_amount = 1_000_0000000_i128;

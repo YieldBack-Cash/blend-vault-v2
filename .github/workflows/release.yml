@@ -14,6 +14,6 @@ jobs:
     uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@main
     with:
       release_name: ${{ github.ref_name }}
-      release_description: 'Fee Vault Release'
+      release_description: 'Blend Vault Release'
     secrets:
       release_token: ${{ secrets.GITHUB_TOKEN }}

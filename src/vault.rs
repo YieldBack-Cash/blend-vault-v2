@@ -1,6 +1,6 @@
 use crate::{
     constants::SCALAR_12,
-    errors::FeeVaultError,
+    errors::BlendVaultError,
     pool,
     storage,
     validator::require_positive,
@@ -42,28 +42,28 @@ impl VaultData {
             .unwrap_optimized()
     }
 
-    /// Coverts a share amount to a b_token amount rounding down
+    /// Converts a share amount to a b_token amount rounding down
     pub fn shares_to_b_tokens_down(&self, amount: i128) -> i128 {
         amount
             .fixed_div_floor(self.total_shares, self.total_b_tokens)
             .unwrap_optimized()
     }
 
-    /// Coverts a b_token amount to an underlying token amount rounding down
+    /// Converts a b_token amount to an underlying token amount rounding down
     pub fn b_tokens_to_underlying_down(&self, amount: i128) -> i128 {
         amount
             .fixed_mul_floor(self.b_rate, SCALAR_12)
             .unwrap_optimized()
     }
 
-    /// Coverts an underlying amount to a b_token amount rounding down
+    /// Converts an underlying amount to a b_token amount rounding down
     pub fn underlying_to_b_tokens_down(&self, amount: i128) -> i128 {
         amount
             .fixed_div_floor(self.b_rate, SCALAR_12)
             .unwrap_optimized()
     }
 
-    /// Coverts an underlying amount to a b_token amount rounding up
+    /// Converts an underlying amount to a b_token amount rounding up
     pub fn underlying_to_b_tokens_up(&self, amount: i128) -> i128 {
         amount
             .fixed_div_ceil(self.b_rate, SCALAR_12)
@@ -109,9 +109,9 @@ pub fn deposit(
     let mut user_shares = storage::get_vault_shares(e, user);
 
     let b_tokens_amount = vault.underlying_to_b_tokens_down(amount);
-    require_positive(e, b_tokens_amount, FeeVaultError::InvalidBTokensMinted);
+    require_positive(e, b_tokens_amount, BlendVaultError::InvalidBTokensMinted);
     let share_amount = vault.b_tokens_to_shares_down(b_tokens_amount);
-    require_positive(e, share_amount, FeeVaultError::InvalidSharesMinted);
+    require_positive(e, share_amount, BlendVaultError::InvalidSharesMinted);
 
     vault.total_shares += share_amount;
     vault.total_b_tokens += b_tokens_amount;
@@ -144,15 +144,15 @@ pub fn withdraw(
     let mut user_shares = storage::get_vault_shares(e, user);
 
     let mut b_tokens_amount = vault.underlying_to_b_tokens_up(amount);
-    require_positive(e, b_tokens_amount, FeeVaultError::InvalidBTokensBurnt);
+    require_positive(e, b_tokens_amount, BlendVaultError::InvalidBTokensBurnt);
     let mut share_amount = vault.b_tokens_to_shares_up(b_tokens_amount);
-    require_positive(e, share_amount, FeeVaultError::InvalidSharesBurnt);
+    require_positive(e, share_amount, BlendVaultError::InvalidSharesBurnt);
     let mut underlying_amount = amount;
 
     if share_amount > user_shares {
         // input amount is too high - burn all shares if user has shares to burn
         // round b_token and underlying down to prevent excess withdrawal amounts
-        require_positive(e, user_shares, FeeVaultError::BalanceError);
+        require_positive(e, user_shares, BlendVaultError::BalanceError);
         share_amount = user_shares;
         underlying_amount =
             vault.b_tokens_to_underlying_down(vault.shares_to_b_tokens_down(share_amount));
@@ -161,7 +161,7 @@ pub fn withdraw(
     }
 
     if vault.total_shares < share_amount || vault.total_b_tokens < b_tokens_amount {
-        panic_with_error!(e, FeeVaultError::InsufficientReserves);
+        panic_with_error!(e, BlendVaultError::InsufficientReserves);
     }
 
     vault.total_shares -= share_amount;
@@ -176,7 +176,7 @@ pub fn withdraw(
 #[cfg(test)]
 mod generic_tests {
     use super::*;
-    use crate::testutils::{create_test_fee_vault, mockpool::MockPoolClient, EnvTestUtils};
+    use crate::testutils::{create_test_blend_vault, mockpool::MockPoolClient, EnvTestUtils};
     use soroban_sdk::{testutils::Address as _, Address};
 
     #[test]
@@ -264,7 +264,7 @@ mod generic_tests {
 
         let bombadil = Address::generate(&e);
         let samwise = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, None);
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, None);
 
         let init_b_rate = 1_100_000_000_000;
         let mock_client = MockPoolClient::new(&e, &pool);
@@ -312,7 +312,7 @@ mod generic_tests {
 
         let bombadil = Address::generate(&e);
         let samwise = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, None);
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, None);
 
         let init_b_rate = 1_000_000_000_000;
         let mock_client = MockPoolClient::new(&e, &pool);
@@ -357,7 +357,7 @@ mod generic_tests {
 
         let bombadil = Address::generate(&e);
         let samwise = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, None);
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, None);
         e.as_contract(&vault_address, || {
             let vault_data = VaultData {
                 total_b_tokens: 1000_0000000,
@@ -379,7 +379,7 @@ mod generic_tests {
 
         let bombadil = Address::generate(&e);
         let samwise = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, None);
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, None);
 
         e.as_contract(&vault_address, || {
             let vault_data = VaultData {
@@ -402,7 +402,7 @@ mod generic_tests {
 
         let bombadil = Address::generate(&e);
         let samwise = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, None);
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, None);
 
         e.as_contract(&vault_address, || {
             // Not possible config in practice, but just in case
@@ -425,7 +425,7 @@ mod generic_tests {
 
         let bombadil = Address::generate(&e);
         let samwise = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, None);
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, None);
 
         e.as_contract(&vault_address, || {
             let vault_data = VaultData {
@@ -465,7 +465,7 @@ mod generic_tests {
 
         let bombadil = Address::generate(&e);
         let samwise = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, None);
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, None);
 
         e.as_contract(&vault_address, || {
             let vault_data = VaultData {
@@ -497,7 +497,7 @@ mod generic_tests {
 
         let bombadil = Address::generate(&e);
         let samwise = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, None);
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, None);
 
         e.as_contract(&vault_address, || {
             let vault_data = VaultData {
@@ -520,7 +520,7 @@ mod generic_tests {
 
         let bombadil = Address::generate(&e);
         let samwise = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, None);
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, None);
 
         e.as_contract(&vault_address, || {
             let vault_data = VaultData {
@@ -545,7 +545,7 @@ mod generic_tests {
 
         let bombadil = Address::generate(&e);
         let samwise = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, None);
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, None);
 
         e.as_contract(&vault_address, || {
             let vault_data = VaultData {
@@ -579,7 +579,7 @@ mod generic_tests {
 
         let bombadil = Address::generate(&e);
         let samwise = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, None);
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, None);
 
         e.as_contract(&vault_address, || {
             let vault_data = VaultData {
@@ -614,7 +614,7 @@ mod generic_tests {
 
         let bombadil = Address::generate(&e);
         let samwise = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, None);
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, None);
 
         e.as_contract(&vault_address, || {
             let vault_data = VaultData {
@@ -652,7 +652,7 @@ mod generic_tests {
 
         let init_b_rate = 1_100_000_000_000;
         let bombadil = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, Some(init_b_rate));
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, Some(init_b_rate));
 
         let mock_client = MockPoolClient::new(&e, &pool);
 
@@ -685,7 +685,7 @@ mod generic_tests {
 
         let init_b_rate = 1_100_000_000_000;
         let bombadil = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, Some(init_b_rate));
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, Some(init_b_rate));
 
         e.as_contract(&vault_address, || {
             let now = e.ledger().timestamp();
@@ -711,7 +711,7 @@ mod generic_tests {
 
         let init_b_rate = 1_100_000_000_000;
         let bombadil = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, Some(init_b_rate));
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, Some(init_b_rate));
 
         e.as_contract(&vault_address, || {
             let now = e.ledger().timestamp();
@@ -741,7 +741,7 @@ mod generic_tests {
 
         let init_b_rate = 1_100_000_000_000;
         let bombadil = Address::generate(&e);
-        let (vault_address, pool, asset) = create_test_fee_vault(&e, &bombadil, Some(init_b_rate));
+        let (vault_address, pool, asset) = create_test_blend_vault(&e, &bombadil, Some(init_b_rate));
         let mock_client = MockPoolClient::new(&e, &pool);
 
         e.as_contract(&vault_address, || {

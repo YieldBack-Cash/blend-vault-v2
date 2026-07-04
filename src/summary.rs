@@ -8,13 +8,7 @@ use crate::{
     vault::{self, VaultData},
 };
 
-/**
- * @dev
- *
- * Summary of the vault state. Intended for offchain services like a dApp to easily display
- * information about the vault. Not intended for onchain logic.
- */
-
+/// Snapshot of vault state for offchain display (e.g. dApp). Not intended for onchain use.
 #[derive(Clone)]
 #[contracttype]
 pub struct VaultSummary {
@@ -107,7 +101,7 @@ mod tests {
     use crate::testutils::{
         assert_approx_eq_abs,
         mockpool::{register_mock_pool_with_config_and_data, ReserveConfig, ReserveData},
-        register_fee_vault, EnvTestUtils,
+        register_blend_vault, EnvTestUtils,
     };
     use soroban_sdk::testutils::Address as _;
 
@@ -154,9 +148,10 @@ mod tests {
             reserve_data,
         );
 
-        let fee_vault = register_fee_vault(&e, &bombadil, &pool_client.address, &token, None, None);
+        let blnd_token = Address::generate(&e);
+        let blend_vault = register_blend_vault(&e, &bombadil, &pool_client.address, &token, &blnd_token);
 
-        e.as_contract(&fee_vault, || {
+        e.as_contract(&blend_vault, || {
             let vault_data = VaultData {
                 total_b_tokens: 1000_0000000,
                 total_shares: 1200_0000000,

@@ -1,40 +1,40 @@
 # Overview
 
-This is a fee vault for Blend pools. It is used to allow an admin to collect a portion of the interest earned from Blend pools by the vault depositors along with all emissions accrued by vault depositors. It can also be used to supplement user deposits or add additional token rewards. Wallets and integrating protocols are the entities typically interested in this functionality.
+This is a blend vault for Blend pools. It is used to allow an admin to collect a portion of the interest earned from Blend pools by the vault depositors along with all emissions accrued by vault depositors. It can also be used to supplement user deposits or add additional token rewards. Wallets and integrating protocols are the entities typically interested in this functionality.
 
 # How it works
 
-The fee vault contract interacts with the underlying blend pool on behalf of users. It acts as a ERC4626-like token vault contract, where the vault holds a given asset's `b_tokens`, and issues `shares` to depositors that represent ownership of the vaults `b_tokens`. For more information about how token vault accounting works, please see: https://eips.ethereum.org/EIPS/eip-4626.
+The blend vault contract interacts with the underlying blend pool on behalf of users. It acts as a ERC4626-like token vault contract, where the vault holds a given asset's `b_tokens`, and issues `shares` to depositors that represent ownership of the vaults `b_tokens`. For more information about how token vault accounting works, please see: https://eips.ethereum.org/EIPS/eip-4626.
 
-The fee vault can be permissioned with the use of a `signer`. If this parameter is set, no user will be able to enter the fee vault unless the `signer` has signed the transaction. Withdrawing from the fee vault does not require a `signer` signature.
+The blend vault can be permissioned with the use of a `signer`. If this parameter is set, no user will be able to enter the blend vault unless the `signer` has signed the transaction. Withdrawing from the blend vault does not require a `signer` signature.
 
-The fee vault can be setup in three different configurations: take rate, capped rate, and fixed rate.
+The blend vault can be setup in three different configurations: take rate, capped rate, and fixed rate.
 
 Regardless of the configuration, admins can manage their balance of `b_tokens` at any time.
 
 ### Take Rate
 
-A take rate fee vault will take a portion of all gains earned by the vault as a fee for the admin on each accrual period. That is, if the vault earns 100 tokens over a day and the vault has a 10% take rate, the users will earn 90 tokens and the admin will earn 10 tokens.
+A take rate blend vault will take a portion of all gains earned by the vault as a fee for the admin on each accrual period. That is, if the vault earns 100 tokens over a day and the vault has a 10% take rate, the users will earn 90 tokens and the admin will earn 10 tokens.
 
 The fees are taken from the vaults `b_tokens` by calculating how many `b_tokens` the 10 tokens is worth. This way, fees are taken fairly from all users in the vault.
 
 ### Capped Rate
 
-A capped rate fee vault will only take gains past the vaults provided rate as a fee for the admin. The vault calculates the interest rate between the current vault interaction and the last time the vault was interacted with. If the interest rate exceeds the capped rate, the excess gains are calculated such that users will earn the capped rate. The excess gains are converted to `b_tokens` and are taken from the vault as an admin fee.
+A capped rate blend vault will only take gains past the vaults provided rate as a fee for the admin. The vault calculates the interest rate between the current vault interaction and the last time the vault was interacted with. If the interest rate exceeds the capped rate, the excess gains are calculated such that users will earn the capped rate. The excess gains are converted to `b_tokens` and are taken from the vault as an admin fee.
 
 If the calculated interest earned over the update period is below the capped rate, no fees are taken.
 
 ### Fixed Rate
 
-A fixed rate fee vault works the same as a capped rate fee vault when the interest rate is above the fixed rate, but will attempt to supplement the users gains if the calculated interest rate over the interaction period is below the fixed rate.
+A fixed rate blend vault works the same as a capped rate blend vault when the interest rate is above the fixed rate, but will attempt to supplement the users gains if the calculated interest rate over the interaction period is below the fixed rate.
 
-If the admin does not maintain a positive `admin_balance`, the vault users will not be supplemented. That is, a fixed rate fee vault will only supplement users yield with existing `b_tokens` in the `admin_balance`.
+If the admin does not maintain a positive `admin_balance`, the vault users will not be supplemented. That is, a fixed rate blend vault will only supplement users yield with existing `b_tokens` in the `admin_balance`.
 
 # Usage
 
 ## Setup
 
-To set up a fee vault for a blend pool, the admin must first deploy a new fee vault contract.
+To set up a blend vault for a blend pool, the admin must first deploy a new blend vault contract.
 
 The contracts are initialized through the `__constructor`.
 
@@ -68,10 +68,10 @@ The contracts are initialized through the `__constructor`.
 
 ## Integration
 
-To integrate the fee vault into your app or protocol, you will just need to have users deposit with the vaults `deposit` function. If there is a `signer`, that address will also need to sign the transaction.
+To integrate the blend vault into your app or protocol, you will just need to have users deposit with the vaults `deposit` function. If there is a `signer`, that address will also need to sign the transaction.
 
 ```rust
-    /// Deposits tokens into the fee vault for a specific reserve. Requires the signer to sign
+    /// Deposits tokens into the blend vault for a specific reserve. Requires the signer to sign
     /// the transaction if the signer is set.
     ///
     /// ### Arguments
@@ -92,7 +92,7 @@ To integrate the fee vault into your app or protocol, you will just need to have
 and withdraw using the `withdraw` function.
 
 ```rust
-    /// Withdraws tokens from the fee vault for a specific reserve
+    /// Withdraws tokens from the blend vault for a specific reserve
     ///
     /// ### Arguments
     /// * `user` - The address of the user making the withdrawal
@@ -138,13 +138,13 @@ You can display general vault information, including the Blend pool, supported a
 
 ## Rewards
 
-The fee vault contains the ability to add rewards for the users depositing into the fee vault. All rewards are issued based on vault `shares` held over time, and are distributed equally to all vault `share` holders.
+The blend vault contains the ability to add rewards for the users depositing into the blend vault. All rewards are issued based on vault `shares` held over time, and are distributed equally to all vault `share` holders.
 
 To setup rewards, the admin can invoke the `set_rewards` function. Note that if there is an active reward period ongoing, the reward token cannot be changed.
 
 ```rust
     /// ADMIN ONLY
-    /// Sets rewards to be distributed to the fee vault depositors. The full `reward_amount` will be
+    /// Sets rewards to be distributed to the blend vault depositors. The full `reward_amount` will be
     /// transferred to the vault to be distributed to the users until the `expiration` timestamp.
     ///
     /// ### Arguments
@@ -161,7 +161,7 @@ To setup rewards, the admin can invoke the `set_rewards` function. Note that if 
 To view the current reward token, use the `get_reward_token` function, or see `Integrations` as the data is included in the `VaultSummary` object. 
 
 ```rust
-    /// Get the current reward token for the fee vault
+    /// Get the current reward token for the blend vault
     ///
     /// ### Returns
     /// * `Option<Address>` - The address of the reward token, or None if no reward token is set
@@ -184,7 +184,7 @@ To view the current reward token's data, use the `get_reward_data` function, or 
 To claim the rewards for a user, use the `claim_rewards` function. For dApps, it is recommended to simulate this function to determine the current rewards a user has available to claim.
 
 ```rust
-    /// Claims rewards for the user from the fee vault.
+    /// Claims rewards for the user from the blend vault.
     ///
     /// ### Arguments
     /// * `user` - The address of the user claiming rewards
@@ -201,7 +201,7 @@ To claim the rewards for a user, use the `claim_rewards` function. For dApps, it
 
 ## Admin Balance Management
 
-Admins can withdraw or deposit funds into their balance pool. Fees will be added to their balance over time based on the fee vaults configuration.
+Admins can withdraw or deposit funds into their balance pool. Fees will be added to their balance over time based on the blend vaults configuration.
 
 To withdraw funds from the admin balance, use the `admin_withdraw` function.
 
@@ -255,7 +255,7 @@ To fetch the underlying asset balance the admin has, use the `get_underlying_adm
 
 ## Collateralizing and Borrowing
 
-The fee vault contract does not currently support collateralizing and borrowing. It only supplies and withdraws tokens from the blend pool.
+The blend vault contract does not currently support collateralizing and borrowing. It only supplies and withdraws tokens from the blend pool.
 
 # Other notes
 

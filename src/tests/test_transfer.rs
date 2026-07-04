@@ -1,7 +1,7 @@
 #![cfg(test)]
 
-use crate::testutils::{assert_approx_eq_abs, create_blend_pool, register_fee_vault, EnvTestUtils};
-use crate::FeeVaultClient;
+use crate::testutils::{assert_approx_eq_abs, create_blend_pool, register_blend_vault, EnvTestUtils};
+use crate::BlendVaultClient;
 use blend_contract_sdk::pool::{Client as PoolClient, Request};
 use blend_contract_sdk::testutils::BlendFixture;
 use sep_41_token::testutils::MockTokenClient;
@@ -10,7 +10,7 @@ use soroban_sdk::{testutils::Address as _, vec, Address, Env};
 // ── fixture ───────────────────────────────────────────────────────────────────
 
 struct Fixture<'a> {
-    fee_vault_client: FeeVaultClient<'a>,
+    blend_vault_client: BlendVaultClient<'a>,
     usdc: Address,
     frodo: Address,
     samwise: Address,
@@ -52,13 +52,13 @@ fn setup(e: &Env, frodo_deposit: i128) -> Fixture<'_> {
         ],
     );
 
-    let fee_vault = register_fee_vault(e, &gandalf, &pool, &usdc, None, None);
-    let fee_vault_client = FeeVaultClient::new(e, &fee_vault);
+    let blend_vault = register_blend_vault(e, &gandalf, &pool, &usdc, &blnd);
+    let blend_vault_client = BlendVaultClient::new(e, &blend_vault);
 
     usdc_client.mint(&frodo, &frodo_deposit);
-    fee_vault_client.deposit(&frodo_deposit, &frodo, &frodo, &frodo);
+    blend_vault_client.deposit(&frodo_deposit, &frodo, &frodo, &frodo);
 
-    Fixture { fee_vault_client, usdc, frodo, samwise }
+    Fixture { blend_vault_client, usdc, frodo, samwise }
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -79,33 +79,33 @@ fn test_transfer_splits_underlying_value() {
     // let yield accrue for a week
     e.jump(crate::storage::ONE_DAY_LEDGERS * 7);
 
-    let shares_total = f.fee_vault_client.get_shares(&f.frodo);
-    let underlying_before = f.fee_vault_client.get_underlying_tokens(&f.frodo);
+    let shares_total = f.blend_vault_client.get_shares(&f.frodo);
+    let underlying_before = f.blend_vault_client.get_underlying_tokens(&f.frodo);
     assert!(underlying_before > deposit, "b_rate yield must have accrued");
 
     // transfer half the shares to samwise
     let transfer_amount = shares_total / 2;
-    f.fee_vault_client.transfer(&f.frodo, &f.samwise, &transfer_amount);
+    f.blend_vault_client.transfer(&f.frodo, &f.samwise, &transfer_amount);
 
     // share counts are correct
-    let frodo_shares = f.fee_vault_client.get_shares(&f.frodo);
-    let samwise_shares = f.fee_vault_client.get_shares(&f.samwise);
+    let frodo_shares = f.blend_vault_client.get_shares(&f.frodo);
+    let samwise_shares = f.blend_vault_client.get_shares(&f.samwise);
     assert_eq!(frodo_shares + samwise_shares, shares_total);
 
     // underlying value splits proportionally (within 1 stroop rounding)
-    let frodo_underlying = f.fee_vault_client.get_underlying_tokens(&f.frodo);
-    let samwise_underlying = f.fee_vault_client.get_underlying_tokens(&f.samwise);
+    let frodo_underlying = f.blend_vault_client.get_underlying_tokens(&f.frodo);
+    let samwise_underlying = f.blend_vault_client.get_underlying_tokens(&f.samwise);
     assert_approx_eq_abs(frodo_underlying, underlying_before / 2, 2);
     assert_approx_eq_abs(samwise_underlying, underlying_before / 2, 2);
 
     // both parties can withdraw their full position
-    f.fee_vault_client.withdraw(&(frodo_underlying * 2), &f.frodo, &f.frodo, &f.frodo);
-    f.fee_vault_client.withdraw(&(samwise_underlying * 2), &f.samwise, &f.samwise, &f.samwise);
+    f.blend_vault_client.withdraw(&(frodo_underlying * 2), &f.frodo, &f.frodo, &f.frodo);
+    f.blend_vault_client.withdraw(&(samwise_underlying * 2), &f.samwise, &f.samwise, &f.samwise);
 
     assert_approx_eq_abs(usdc_client.balance(&f.frodo), frodo_underlying, 2);
     assert_approx_eq_abs(usdc_client.balance(&f.samwise), samwise_underlying, 2);
-    assert_eq!(f.fee_vault_client.get_shares(&f.frodo), 0);
-    assert_eq!(f.fee_vault_client.get_shares(&f.samwise), 0);
+    assert_eq!(f.blend_vault_client.get_shares(&f.frodo), 0);
+    assert_eq!(f.blend_vault_client.get_shares(&f.samwise), 0);
 }
 
 /// After a transfer, yield from b_rate appreciation continues to accrue
@@ -120,19 +120,19 @@ fn test_yield_accrues_to_share_holder_after_transfer() {
     let f = setup(&e, 100_0000000);
 
     // transfer ALL shares to samwise before any yield accrues
-    let shares = f.fee_vault_client.get_shares(&f.frodo);
-    f.fee_vault_client.transfer(&f.frodo, &f.samwise, &shares);
+    let shares = f.blend_vault_client.get_shares(&f.frodo);
+    f.blend_vault_client.transfer(&f.frodo, &f.samwise, &shares);
 
-    assert_eq!(f.fee_vault_client.get_shares(&f.frodo), 0);
-    assert_eq!(f.fee_vault_client.get_underlying_tokens(&f.frodo), 0);
+    assert_eq!(f.blend_vault_client.get_shares(&f.frodo), 0);
+    assert_eq!(f.blend_vault_client.get_underlying_tokens(&f.frodo), 0);
 
     // let yield accrue for a week
     e.jump(crate::storage::ONE_DAY_LEDGERS * 7);
 
     // samwise holds all shares so all yield goes to samwise
-    let samwise_underlying = f.fee_vault_client.get_underlying_tokens(&f.samwise);
+    let samwise_underlying = f.blend_vault_client.get_underlying_tokens(&f.samwise);
     assert!(samwise_underlying > 100_0000000, "samwise must earn yield");
-    assert_eq!(f.fee_vault_client.get_underlying_tokens(&f.frodo), 0);
+    assert_eq!(f.blend_vault_client.get_underlying_tokens(&f.frodo), 0);
 }
 
 /// Transferring shares then receiving more deposits doesn't corrupt the
@@ -152,16 +152,16 @@ fn test_total_shares_consistent_after_transfer_and_deposit() {
     usdc_client.mint(&merry, &deposit);
 
     // frodo transfers half to samwise
-    let frodo_shares = f.fee_vault_client.get_shares(&f.frodo);
-    f.fee_vault_client.transfer(&f.frodo, &f.samwise, &(frodo_shares / 2));
+    let frodo_shares = f.blend_vault_client.get_shares(&f.frodo);
+    f.blend_vault_client.transfer(&f.frodo, &f.samwise, &(frodo_shares / 2));
 
     // merry deposits
-    f.fee_vault_client.deposit(&deposit, &merry, &merry, &merry);
+    f.blend_vault_client.deposit(&deposit, &merry, &merry, &merry);
 
-    let total = f.fee_vault_client.get_vault().total_shares;
-    let sum = f.fee_vault_client.get_shares(&f.frodo)
-        + f.fee_vault_client.get_shares(&f.samwise)
-        + f.fee_vault_client.get_shares(&merry);
+    let total = f.blend_vault_client.get_vault().total_shares;
+    let sum = f.blend_vault_client.get_shares(&f.frodo)
+        + f.blend_vault_client.get_shares(&f.samwise)
+        + f.blend_vault_client.get_shares(&merry);
 
     assert_eq!(total, sum);
 }
@@ -182,24 +182,24 @@ fn test_chain_of_transfers_final_holder_can_withdraw() {
     e.jump(crate::storage::ONE_DAY_LEDGERS * 3);
 
     // frodo → samwise
-    let frodo_shares = f.fee_vault_client.get_shares(&f.frodo);
-    f.fee_vault_client.transfer(&f.frodo, &f.samwise, &frodo_shares);
+    let frodo_shares = f.blend_vault_client.get_shares(&f.frodo);
+    f.blend_vault_client.transfer(&f.frodo, &f.samwise, &frodo_shares);
 
     e.jump(crate::storage::ONE_DAY_LEDGERS * 3);
 
     // samwise → merry
-    let samwise_shares = f.fee_vault_client.get_shares(&f.samwise);
-    f.fee_vault_client.transfer(&f.samwise, &merry, &samwise_shares);
+    let samwise_shares = f.blend_vault_client.get_shares(&f.samwise);
+    f.blend_vault_client.transfer(&f.samwise, &merry, &samwise_shares);
 
     e.jump(crate::storage::ONE_DAY_LEDGERS * 3);
 
-    assert_eq!(f.fee_vault_client.get_shares(&f.frodo), 0);
-    assert_eq!(f.fee_vault_client.get_shares(&f.samwise), 0);
+    assert_eq!(f.blend_vault_client.get_shares(&f.frodo), 0);
+    assert_eq!(f.blend_vault_client.get_shares(&f.samwise), 0);
 
     // merry holds everything and can withdraw
-    let merry_underlying = f.fee_vault_client.get_underlying_tokens(&merry);
+    let merry_underlying = f.blend_vault_client.get_underlying_tokens(&merry);
     assert!(merry_underlying > 100_0000000);
-    f.fee_vault_client.withdraw(&(merry_underlying * 2), &merry, &merry, &merry);
-    assert_eq!(f.fee_vault_client.get_shares(&merry), 0);
+    f.blend_vault_client.withdraw(&(merry_underlying * 2), &merry, &merry, &merry);
+    assert_eq!(f.blend_vault_client.get_shares(&merry), 0);
     assert!(usdc_client.balance(&merry) > 100_0000000);
 }

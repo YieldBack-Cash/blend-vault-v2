@@ -2,7 +2,7 @@
 
 use core::i64;
 
-use crate::{constants::SCALAR_7, storage::ONE_DAY_LEDGERS, FeeVault};
+use crate::{constants::SCALAR_7, storage::ONE_DAY_LEDGERS, BlendVault};
 use blend_contract_sdk::pool::{Client as PoolClient, ReserveConfig, ReserveEmissionMetadata};
 use blend_contract_sdk::testutils::BlendFixture;
 use sep_41_token::testutils::MockTokenClient;
@@ -13,32 +13,22 @@ use soroban_sdk::{
     vec, Address, BytesN, Env, String, Symbol,
 };
 
-/// Registers a fee vault contract.
-pub(crate) fn register_fee_vault(
+/// Registers a blend vault contract.
+pub(crate) fn register_blend_vault(
     e: &Env,
     admin: &Address,
     pool: &Address,
     asset: &Address,
-    signer: Option<Address>,
-    router: Option<Address>,
+    blnd_token: &Address,
 ) -> Address {
-    e.register(
-        FeeVault {},
-        (
-            admin.clone(),
-            pool.clone(),
-            asset.clone(),
-            signer,
-            router,
-        ),
-    )
+    e.register(BlendVault {}, (admin.clone(), pool.clone(), asset.clone(), blnd_token.clone()))
 }
 
-/// Create a test fee vault backed by a mock pool.
+/// Create a test blend vault backed by a mock pool.
 /// If no initial b_rate is provided, defaults to 1_100_000_000_000.
 ///
 /// Returns (vault address, mock pool address, mock token address)
-pub(crate) fn create_test_fee_vault(
+pub(crate) fn create_test_blend_vault(
     e: &Env,
     admin: &Address,
     b_rate: Option<i128>,
@@ -48,7 +38,10 @@ pub(crate) fn create_test_fee_vault(
     let asset = e
         .register_stellar_asset_contract_v2(admin.clone())
         .address();
-    let vault = register_fee_vault(e, admin, &pool, &asset, None, None);
+    let blnd_token = e
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+    let vault = register_blend_vault(e, admin, &pool, &asset, &blnd_token);
     (vault, pool, asset)
 }
 

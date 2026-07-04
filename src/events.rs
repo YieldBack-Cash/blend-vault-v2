@@ -1,8 +1,8 @@
 use soroban_sdk::{Address, Env, Symbol};
 
-pub struct FeeVaultEvents {}
+pub struct BlendVaultEvents {}
 
-impl FeeVaultEvents {
+impl BlendVaultEvents {
     /// Emitted when a deposit is performed against the vault
     ///
     /// - topics - `["vault_deposit", pool: Address, reserve: Address, from: Address]`

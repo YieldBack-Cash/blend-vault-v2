@@ -1,5 +1,5 @@
 [package]
-name = "fee-vault-v2"
+name = "blend-vault-v2"
 version = "1.0.0"
 authors = ["Script3 Ltd. <gm@script3.io>"]
 license = "AGPL-3.0"

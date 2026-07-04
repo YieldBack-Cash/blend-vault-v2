@@ -4,7 +4,7 @@ use soroban_sdk::contracterror;
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
-pub enum FeeVaultError {
+pub enum BlendVaultError {
     // Default errors to align with built-in contract
     BalanceError = 10,
 

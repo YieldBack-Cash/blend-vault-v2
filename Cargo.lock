@@ -196,6 +196,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "blend-vault-v2"
+version = "1.0.0"
+dependencies = [
+ "blend-contract-sdk",
+ "sep-40-oracle",
+ "sep-41-token",
+ "soroban-fixed-point-math",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -518,17 +529,6 @@ name = "ethnum"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b90ca2580b73ab6a1f724b76ca11ab632df820fd6040c336200d2c1df7b3c82c"
-
-[[package]]
-name = "fee-vault-v2"
-version = "1.0.0"
-dependencies = [
- "blend-contract-sdk",
- "sep-40-oracle",
- "sep-41-token",
- "soroban-fixed-point-math",
- "soroban-sdk",
-]
 
 [[package]]
 name = "ff"

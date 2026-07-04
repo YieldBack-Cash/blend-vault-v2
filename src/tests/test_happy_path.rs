@@ -2,8 +2,8 @@
 
 use crate::constants::SCALAR_12;
 use crate::storage::ONE_DAY_LEDGERS;
-use crate::testutils::{assert_approx_eq_abs, create_blend_pool, register_fee_vault, EnvTestUtils};
-use crate::FeeVaultClient;
+use crate::testutils::{assert_approx_eq_abs, create_blend_pool, register_blend_vault, EnvTestUtils};
+use crate::BlendVaultClient;
 use blend_contract_sdk::pool::{Client as PoolClient, Request};
 use blend_contract_sdk::testutils::BlendFixture;
 use sep_41_token::testutils::MockTokenClient;
@@ -42,8 +42,8 @@ fn test_happy_path() {
     // emits to each reserve token evently, and starts emissions
     let pool = create_blend_pool(&e, &blend_fixture, &bombadil, &usdc_client, &xlm_client);
     let pool_client = PoolClient::new(&e, &pool);
-    let fee_vault = register_fee_vault(&e, &bombadil, &pool, &usdc, None, None);
-    let fee_vault_client = FeeVaultClient::new(&e, &fee_vault);
+    let blend_vault = register_blend_vault(&e, &bombadil, &pool, &usdc, &blnd);
+    let blend_vault_client = BlendVaultClient::new(&e, &blend_vault);
 
     // Setup pool util rate
     // Bombadil deposits 200k tokens and borrows 100k tokens for a 50% util rate
@@ -74,7 +74,7 @@ fn test_happy_path() {
         .mock_all_auths()
         .submit(&bombadil, &bombadil, &bombadil, &requests);
 
-    fee_vault_client.set_admin(&gandalf);
+    blend_vault_client.set_admin(&gandalf);
     // -> verify set_admin auth
     assert_eq!(
         e.auths()[0],
@@ -82,7 +82,7 @@ fn test_happy_path() {
             bombadil.clone(),
             AuthorizedInvocation {
                 function: AuthorizedFunction::Contract((
-                    fee_vault.clone(),
+                    blend_vault.clone(),
                     Symbol::new(&e, "set_admin"),
                     vec![&e, gandalf.to_val(),]
                 )),
@@ -96,7 +96,7 @@ fn test_happy_path() {
             gandalf.clone(),
             AuthorizedInvocation {
                 function: AuthorizedFunction::Contract((
-                    fee_vault.clone(),
+                    blend_vault.clone(),
                     Symbol::new(&e, "set_admin"),
                     vec![&e, gandalf.to_val(),]
                 )),
@@ -110,7 +110,7 @@ fn test_happy_path() {
 
     /*
      * Deposit into pool
-     * -> deposit 100 into fee vault for each frodo and samwise
+     * -> deposit 100 into blend vault for each frodo and samwise
      * -> deposit 200 into pool for merry
      * -> bombadil borrow from pool to return to 50% util rate
      * -> verify a deposit into an uninitialized vault fails
@@ -120,7 +120,7 @@ fn test_happy_path() {
     usdc_client.mint(&frodo, &starting_balance);
     usdc_client.mint(&samwise, &starting_balance);
 
-    fee_vault_client.deposit(&starting_balance, &frodo, &frodo, &frodo);
+    blend_vault_client.deposit(&starting_balance, &frodo, &frodo, &frodo);
     // -> verify deposit auth
     let deposit_request = vec![
         &e,
@@ -136,7 +136,7 @@ fn test_happy_path() {
             frodo.clone(),
             AuthorizedInvocation {
                 function: AuthorizedFunction::Contract((
-                    fee_vault.clone(),
+                    blend_vault.clone(),
                     Symbol::new(&e, "deposit"),
                     vec![&e, starting_balance.into_val(&e), frodo.to_val(), frodo.to_val(), frodo.to_val(),]
                 )),
@@ -146,7 +146,7 @@ fn test_happy_path() {
                         Symbol::new(&e, "submit"),
                         vec![
                             &e,
-                            fee_vault.to_val(),
+                            blend_vault.to_val(),
                             frodo.to_val(),
                             frodo.to_val(),
                             deposit_request.to_val(),
@@ -171,9 +171,9 @@ fn test_happy_path() {
     );
 
     // gandalf to set bombadil as signer
-    fee_vault_client.set_signer(&Some(bombadil.clone()));
+    blend_vault_client.set_signer(&Some(bombadil.clone()));
 
-    fee_vault_client.deposit(&starting_balance, &samwise, &samwise, &samwise);
+    blend_vault_client.deposit(&starting_balance, &samwise, &samwise, &samwise);
     // -> verify deposit auth with signer
     let deposit_request = vec![
         &e,
@@ -183,8 +183,8 @@ fn test_happy_path() {
             amount: starting_balance.clone(),
         },
     ];
-    let fee_vault_auth_function = AuthorizedFunction::Contract((
-        fee_vault.clone(),
+    let blend_vault_auth_function = AuthorizedFunction::Contract((
+        blend_vault.clone(),
         Symbol::new(&e, "deposit"),
         vec![&e, starting_balance.into_val(&e), samwise.to_val(), samwise.to_val(), samwise.to_val()],
     ));
@@ -194,14 +194,14 @@ fn test_happy_path() {
             (
                 samwise.clone(),
                 AuthorizedInvocation {
-                    function: fee_vault_auth_function.clone(),
+                    function: blend_vault_auth_function.clone(),
                     sub_invocations: std::vec![AuthorizedInvocation {
                         function: AuthorizedFunction::Contract((
                             pool.clone(),
                             Symbol::new(&e, "submit"),
                             vec![
                                 &e,
-                                fee_vault.to_val(),
+                                blend_vault.to_val(),
                                 samwise.to_val(),
                                 samwise.to_val(),
                                 deposit_request.to_val(),
@@ -226,7 +226,7 @@ fn test_happy_path() {
             (
                 bombadil.clone(),
                 AuthorizedInvocation {
-                    function: fee_vault_auth_function,
+                    function: blend_vault_auth_function,
                     sub_invocations: std::vec![]
                 }
             )
@@ -241,18 +241,18 @@ fn test_happy_path() {
         .fixed_div_floor(usdc_reserve.data.b_rate, SCALAR_12)
         .unwrap_optimized();
     assert_eq!(
-        fee_vault_client.get_shares(&frodo),
+        blend_vault_client.get_shares(&frodo),
         b_tokens_starting_balance
     );
     assert_eq!(
-        fee_vault_client.get_shares(&samwise),
+        blend_vault_client.get_shares(&samwise),
         b_tokens_starting_balance
     );
     assert_eq!(
         usdc_client.balance(&pool),
         pool_usdc_balance_start + starting_balance * 2
     );
-    let vault_positions = pool_client.get_positions(&fee_vault);
+    let vault_positions = pool_client.get_positions(&blend_vault);
     assert_eq!(
         vault_positions.supply.get(0).unwrap_optimized(),
         b_tokens_starting_balance * 2
@@ -297,13 +297,13 @@ fn test_happy_path() {
     e.jump(ONE_DAY_LEDGERS * 7);
 
     // check vault summary
-    let vault_summary = fee_vault_client.get_vault_summary();
+    let vault_summary = blend_vault_client.get_vault_summary();
     assert_eq!(vault_summary.pool, pool);
     assert_eq!(vault_summary.asset, usdc);
     assert_eq!(vault_summary.admin, gandalf);
     assert_eq!(vault_summary.signer, Some(bombadil.clone()));
-    let frodo_shares = fee_vault_client.get_shares(&frodo);
-    let samwise_shares = fee_vault_client.get_shares(&samwise);
+    let frodo_shares = blend_vault_client.get_shares(&frodo);
+    let samwise_shares = blend_vault_client.get_shares(&samwise);
     assert_eq!(
         vault_summary.vault.total_shares,
         frodo_shares + samwise_shares
@@ -314,7 +314,7 @@ fn test_happy_path() {
     /*
      * Withdraw from pool
      * -> withdraw all funds from pool for merry
-     * -> withdraw (excluding dust) from fee vault for frodo and samwise
+     * -> withdraw (excluding dust) from blend vault for frodo and samwise
      * -> verify a withdraw from an uninitialized vault fails
      * -> verify a withdraw from an empty vault fails
      * -> verify an over withdraw fails
@@ -337,12 +337,12 @@ fn test_happy_path() {
     let merry_final_balance = usdc_client.balance(&merry);
     let merry_profit = merry_final_balance - merry_starting_balance;
 
-    // withdraw from fee vault for frodo and samwise
+    // withdraw from blend vault for frodo and samwise
     // they are expected to receive half of the profit of merry (no vault fee)
     let expected_frodo_profit = merry_profit / 2;
     let withdraw_amount = starting_balance + expected_frodo_profit;
 
-    fee_vault_client.withdraw(&withdraw_amount, &frodo, &frodo, &frodo);
+    blend_vault_client.withdraw(&withdraw_amount, &frodo, &frodo, &frodo);
     // -> verify withdraw auth
     assert_eq!(
         e.auths(),
@@ -350,7 +350,7 @@ fn test_happy_path() {
             frodo.clone(),
             AuthorizedInvocation {
                 function: AuthorizedFunction::Contract((
-                    fee_vault.clone(),
+                    blend_vault.clone(),
                     Symbol::new(&e, "withdraw"),
                     vec![&e, withdraw_amount.into_val(&e), frodo.to_val(), frodo.to_val(), frodo.to_val(),]
                 )),
@@ -360,25 +360,25 @@ fn test_happy_path() {
     );
 
     // -> verify over withdraw is pulled down to full balance
-    fee_vault_client.withdraw(&(withdraw_amount * 2), &samwise, &samwise, &samwise);
+    blend_vault_client.withdraw(&(withdraw_amount * 2), &samwise, &samwise, &samwise);
 
     // -> verify withdraw
     assert_eq!(usdc_client.balance(&frodo), withdraw_amount);
     assert_eq!(usdc_client.balance(&samwise), withdraw_amount);
-    assert_eq!(fee_vault_client.get_shares(&frodo), 0);
-    assert_eq!(fee_vault_client.get_shares(&samwise), 0);
+    assert_eq!(blend_vault_client.get_shares(&frodo), 0);
+    assert_eq!(blend_vault_client.get_shares(&samwise), 0);
 
     // -> verify withdraw from empty vault fails
-    let result = fee_vault_client.try_withdraw(&1, &samwise, &samwise, &samwise);
+    let result = blend_vault_client.try_withdraw(&1, &samwise, &samwise, &samwise);
     assert_eq!(result.err(), Some(Ok(Error::from_contract_error(10))));
 
     // -> verify vault position is empty and fully unwound
-    assert!(pool_client.get_positions(&fee_vault).supply.is_empty());
-    let reserve_vault = fee_vault_client.get_vault();
+    assert!(pool_client.get_positions(&blend_vault).supply.is_empty());
+    let reserve_vault = blend_vault_client.get_vault();
     assert_eq!(reserve_vault.total_b_tokens, 0);
     assert_eq!(reserve_vault.total_shares, 0);
 
     // vault claim_emissions requires a Soroswap router — panics without one
-    let result = fee_vault_client.try_claim_emissions(&0);
+    let result = blend_vault_client.try_claim_emissions(&0);
     assert_eq!(result.err(), Some(Ok(Error::from_contract_error(113))));
 }

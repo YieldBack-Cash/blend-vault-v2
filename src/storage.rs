@@ -1,8 +1,8 @@
 use soroban_sdk::{contracttype, panic_with_error, unwrap::UnwrapOptimized, Address, Env, Symbol};
 
-use crate::{constants::BLND_TOKEN, errors::FeeVaultError, vault::VaultData};
+use crate::{errors::BlendVaultError, vault::VaultData};
 
-//********** Storage Keys **********//
+//---------- Storage Keys ----------//
 
 const POOL_KEY: &str = "Pool";
 const ADMIN_KEY: &str = "Admin";
@@ -10,10 +10,11 @@ const ASSET_KEY: &str = "Asset";
 const SIGNER_KEY: &str = "Signer";
 const VAULT_DATA_KEY: &str = "Vault";
 const ROUTER_KEY: &str = "Router";
+const BLND_TOKEN_KEY: &str = "BlndToken";
 
 #[derive(Clone)]
 #[contracttype]
-pub enum FeeVaultDataKey {
+pub enum BlendVaultDataKey {
     Shares(Address),
     Allowance(AllowanceKey),
 }
@@ -32,7 +33,7 @@ pub struct AllowanceValue {
     pub expiration_ledger: u32,
 }
 
-//********** Storage Utils **********//
+//---------- Storage Utils ----------//
 
 pub const ONE_DAY_LEDGERS: u32 = 17280; // assumes 5 seconds per ledger on average
 
@@ -42,14 +43,14 @@ const LEDGER_THRESHOLD_SHARED: u32 = LEDGER_BUMP_SHARED - ONE_DAY_LEDGERS;
 const LEDGER_BUMP_USER: u32 = 120 * ONE_DAY_LEDGERS;
 const LEDGER_THRESHOLD_USER: u32 = LEDGER_BUMP_USER - 20 * ONE_DAY_LEDGERS;
 
-/// Bump the instance lifetime by the defined amount
+/// Extends the instance storage TTL.
 pub fn extend_instance(e: &Env) {
     e.storage()
         .instance()
         .extend_ttl(LEDGER_THRESHOLD_SHARED, LEDGER_BUMP_SHARED);
 }
 
-/********** Instance **********/
+//---------- Instance ----------//
 
 /// Get the pool address
 pub fn get_pool(e: &Env) -> Address {
@@ -131,39 +132,26 @@ pub fn set_router(e: &Env, router: Address) {
         .set::<Symbol, Address>(&Symbol::new(e, ROUTER_KEY), &router);
 }
 
-/// Get the BLND token address from the hardcoded network constant.
-/// In test builds, returns a stored override if one was set via `set_blnd_token_for_test`.
+/// Get the BLND token address.
 pub fn get_blnd_token(e: &Env) -> Address {
-    #[cfg(test)]
-    if let Some(addr) = e
-        .storage()
-        .instance()
-        .get::<Symbol, Address>(&Symbol::new(e, "TestBlnd"))
-    {
-        return addr;
-    }
-    Address::from_str(e, BLND_TOKEN)
-}
-
-/// Store a BLND token override for the current contract instance.
-/// Only compiled in test builds — allows tests to inject the dynamically registered BLND address
-/// instead of the hardcoded network constant.
-#[cfg(test)]
-pub fn set_blnd_token_for_test(e: &Env, addr: &Address) {
     e.storage()
         .instance()
-        .set::<Symbol, Address>(&Symbol::new(e, "TestBlnd"), addr);
+        .get::<Symbol, Address>(&Symbol::new(e, BLND_TOKEN_KEY))
+        .unwrap_optimized()
 }
 
-/********** Persistent **********/
-// @dev
-// Persistent data is not bumped on read, the data's access patterns mean they are almost always written
-// when accessed, unless when used off-chain (e.g. by a frontend).
+/// Set the BLND token address.
+pub fn set_blnd_token(e: &Env, blnd_token: Address) {
+    e.storage()
+        .instance()
+        .set::<Symbol, Address>(&Symbol::new(e, BLND_TOKEN_KEY), &blnd_token);
+}
 
-/// Set the vault data
-///
-/// ### Arguments
-/// * `vault` - The vault data
+//---------- Persistent ----------//
+// Persistent data is not bumped on read — entries are almost always written when accessed,
+// so bumping on write is sufficient. Off-chain reads (e.g. dApp) don't need to extend TTL.
+
+/// Persists vault data to storage.
 pub fn set_vault_data(e: &Env, vault: &VaultData) {
     let key = Symbol::new(e, VAULT_DATA_KEY);
     e.storage()
@@ -180,37 +168,30 @@ pub fn get_vault_data(e: &Env) -> VaultData {
     e.storage()
         .persistent()
         .get::<Symbol, VaultData>(&key)
-        .unwrap_or_else(|| panic_with_error!(e, FeeVaultError::ReserveNotFound))
+        .unwrap_or_else(|| panic_with_error!(e, BlendVaultError::ReserveNotFound))
 }
 
-/// Set the number of vault shares a user owns. Shares are stored with 7 decimal places of precision.
-///
-/// ### Arguments
-/// * `user` - The address of the user
-/// * `shares` - The number of shares the user owns
+/// Persists `user`'s vault share balance. Values use 7 decimal places of precision.
 pub fn set_vault_shares(e: &Env, user: &Address, shares: i128) {
-    let key = FeeVaultDataKey::Shares(user.clone());
+    let key = BlendVaultDataKey::Shares(user.clone());
     e.storage()
         .persistent()
-        .set::<FeeVaultDataKey, i128>(&key, &shares);
+        .set::<BlendVaultDataKey, i128>(&key, &shares);
     e.storage()
         .persistent()
         .extend_ttl(&key, LEDGER_THRESHOLD_USER, LEDGER_BUMP_USER);
 }
 
-/// Get the number of vault shares a user owns. Shares are stored with 7 decimal places of precision.
-///
-/// ### Arguments
-/// * `user` - The address of the user
+/// Returns `user`'s vault share balance. Values use 7 decimal places of precision.
 pub fn get_vault_shares(e: &Env, user: &Address) -> i128 {
-    let key = FeeVaultDataKey::Shares(user.clone());
+    let key = BlendVaultDataKey::Shares(user.clone());
     e.storage()
         .persistent()
-        .get::<FeeVaultDataKey, i128>(&key)
+        .get::<BlendVaultDataKey, i128>(&key)
         .unwrap_or(0)
 }
 
-/********** Temporary **********/
+//---------- Temporary ----------//
 
 /// Get the approved allowance for a spender on behalf of from.
 /// Returns 0 if no allowance exists or if it has expired.
@@ -221,11 +202,11 @@ pub fn get_allowance(e: &Env, from: &Address, spender: &Address) -> i128 {
 /// Get the approved allowance and its expiration ledger together.
 /// Returns (0, 0) if no allowance exists or if it has expired.
 pub fn get_allowance_with_expiration(e: &Env, from: &Address, spender: &Address) -> (i128, u32) {
-    let key = FeeVaultDataKey::Allowance(AllowanceKey {
+    let key = BlendVaultDataKey::Allowance(AllowanceKey {
         from: from.clone(),
         spender: spender.clone(),
     });
-    match e.storage().temporary().get::<FeeVaultDataKey, AllowanceValue>(&key) {
+    match e.storage().temporary().get::<BlendVaultDataKey, AllowanceValue>(&key) {
         Some(a) if a.expiration_ledger >= e.ledger().sequence() => (a.amount, a.expiration_ledger),
         _ => (0, 0),
     }
@@ -240,11 +221,11 @@ pub fn set_allowance(
     amount: i128,
     expiration_ledger: u32,
 ) {
-    let key = FeeVaultDataKey::Allowance(AllowanceKey {
+    let key = BlendVaultDataKey::Allowance(AllowanceKey {
         from: from.clone(),
         spender: spender.clone(),
     });
-    e.storage().temporary().set::<FeeVaultDataKey, AllowanceValue>(
+    e.storage().temporary().set::<BlendVaultDataKey, AllowanceValue>(
         &key,
         &AllowanceValue { amount, expiration_ledger },
     );
