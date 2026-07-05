@@ -1,0 +1,11 @@
+{
+  "network": "testnet",
+  "passphrase": "Test SDF Network ; September 2015",
+  "contracts": {
+    "blend_vault": {
+      "id": "CAQXBAROPEAUXJYQH7AXTDWSH3M5O7NH24J23G3KUSKYRP5QFJCDEZLT",
+      "wasm_hash": "eb43b015da5f27d1bf6fe731a7ffdf39e389ba7b53fdd2fbbf7218e821ff74be",
+      "deployed_at": "2026-07-05T00:35:58Z"
+    }
+  }
+}
