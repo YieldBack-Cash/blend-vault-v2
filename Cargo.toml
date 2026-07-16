@@ -25,6 +25,7 @@ soroban-sdk = { version = "22.0.8", features = ["testutils"] }
 blend-contract-sdk = { version = "2.22.0", features = ["testutils"] }
 sep-40-oracle = { version = "1.2.2", features = ["testutils"] }
 sep-41-token = { version = " 1.2.0", features = ["testutils"] }
+proptest = "1.4"
 
 [profile.release-with-logs]
 inherits = "release"

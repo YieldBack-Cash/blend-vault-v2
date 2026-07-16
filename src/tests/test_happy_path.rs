@@ -2,7 +2,10 @@
 
 use crate::constants::SCALAR_12;
 use crate::storage::ONE_DAY_LEDGERS;
-use crate::testutils::{assert_approx_eq_abs, create_blend_pool, register_blend_vault, EnvTestUtils};
+use crate::testutils::{
+    assert_approx_eq_abs, create_blend_pool, register_blend_vault, setup_pool_util_rate,
+    EnvTestUtils,
+};
 use crate::BlendVaultClient;
 use blend_contract_sdk::pool::{Client as PoolClient, Request};
 use blend_contract_sdk::testutils::BlendFixture;
@@ -39,40 +42,14 @@ fn test_happy_path() {
     let blend_fixture = BlendFixture::deploy(&e, &bombadil, &blnd, &usdc);
 
     // usdc (0) and xlm (1) charge a fixed 10% borrow rate with 0% backstop take rate
-    // emits to each reserve token evently, and starts emissions
+    // emits to each reserve token evenly, and starts emissions
     let pool = create_blend_pool(&e, &blend_fixture, &bombadil, &usdc_client, &xlm_client);
     let pool_client = PoolClient::new(&e, &pool);
     let blend_vault = register_blend_vault(&e, &bombadil, &pool, &usdc, &blnd);
     let blend_vault_client = BlendVaultClient::new(&e, &blend_vault);
 
-    // Setup pool util rate
     // Bombadil deposits 200k tokens and borrows 100k tokens for a 50% util rate
-    let requests = vec![
-        &e,
-        Request {
-            address: usdc.clone(),
-            amount: 200_000_0000000,
-            request_type: 2,
-        },
-        Request {
-            address: usdc.clone(),
-            amount: 100_000_0000000,
-            request_type: 4,
-        },
-        Request {
-            address: xlm.clone(),
-            amount: 200_000_0000000,
-            request_type: 2,
-        },
-        Request {
-            address: xlm.clone(),
-            amount: 100_000_0000000,
-            request_type: 4,
-        },
-    ];
-    pool_client
-        .mock_all_auths()
-        .submit(&bombadil, &bombadil, &bombadil, &requests);
+    setup_pool_util_rate(&e, &pool, &bombadil, &usdc, &xlm, 100_000_0000000);
 
     blend_vault_client.set_admin(&gandalf);
     // -> verify set_admin auth
@@ -113,7 +90,6 @@ fn test_happy_path() {
      * -> deposit 100 into blend vault for each frodo and samwise
      * -> deposit 200 into pool for merry
      * -> bombadil borrow from pool to return to 50% util rate
-     * -> verify a deposit into an uninitialized vault fails
      */
     let pool_usdc_balance_start = usdc_client.balance(&pool);
     let starting_balance = 100_0000000;
@@ -315,9 +291,8 @@ fn test_happy_path() {
      * Withdraw from pool
      * -> withdraw all funds from pool for merry
      * -> withdraw (excluding dust) from blend vault for frodo and samwise
-     * -> verify a withdraw from an uninitialized vault fails
      * -> verify a withdraw from an empty vault fails
-     * -> verify an over withdraw fails
+     * -> verify an over withdraw is pulled down to the full balance
      */
 
     // withdraw all funds from pool for merry

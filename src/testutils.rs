@@ -1,9 +1,7 @@
 #![cfg(test)]
 
-use core::i64;
-
 use crate::{constants::SCALAR_7, storage::ONE_DAY_LEDGERS, BlendVault};
-use blend_contract_sdk::pool::{Client as PoolClient, ReserveConfig, ReserveEmissionMetadata};
+use blend_contract_sdk::pool::{Client as PoolClient, Request, ReserveConfig, ReserveEmissionMetadata};
 use blend_contract_sdk::testutils::BlendFixture;
 use sep_41_token::testutils::MockTokenClient;
 use soroban_fixed_point_math::FixedPoint;
@@ -135,7 +133,32 @@ pub(crate) fn create_blend_pool(
     e.jump(ONE_DAY_LEDGERS * 7);
     blend_fixture.emitter.distribute();
     blend_fixture.backstop.distribute();
-    return pool;
+    pool
+}
+
+/// Supplies 200k usdc and 200k xlm to `pool` as `admin`, then borrows
+/// `usdc_borrow` usdc and 100k xlm against it to establish the pool's
+/// utilization rate (~50% with 100k usdc borrowed).
+pub(crate) fn setup_pool_util_rate(
+    e: &Env,
+    pool: &Address,
+    admin: &Address,
+    usdc: &Address,
+    xlm: &Address,
+    usdc_borrow: i128,
+) {
+    PoolClient::new(e, pool).mock_all_auths().submit(
+        admin,
+        admin,
+        admin,
+        &vec![
+            e,
+            Request { address: usdc.clone(), amount: 200_000_0000000, request_type: 2 },
+            Request { address: usdc.clone(), amount: usdc_borrow, request_type: 4 },
+            Request { address: xlm.clone(), amount: 200_000_0000000, request_type: 2 },
+            Request { address: xlm.clone(), amount: 100_000_0000000, request_type: 4 },
+        ],
+    );
 }
 
 pub trait EnvTestUtils {

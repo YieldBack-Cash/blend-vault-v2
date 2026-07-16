@@ -109,19 +109,19 @@ fn test_convert_to_assets_matches_underlying_tokens() {
     e.set_default_info();
 
     let (vault, _pool, samwise, frodo) = setup_mock(&e);
-    let fee_client = BlendVaultClient::new(&e, &vault);
+    let vault_client = BlendVaultClient::new(&e, &vault);
     let oz_client = VaultContractClient::new(&e, &vault);
 
-    let samwise_shares = fee_client.get_shares(&samwise);
-    let frodo_shares = fee_client.get_shares(&frodo);
+    let samwise_shares = vault_client.get_shares(&samwise);
+    let frodo_shares = vault_client.get_shares(&frodo);
 
     assert_eq!(
         oz_client.convert_to_assets(&samwise_shares),
-        fee_client.get_underlying_tokens(&samwise)
+        vault_client.get_underlying_tokens(&samwise)
     );
     assert_eq!(
         oz_client.convert_to_assets(&frodo_shares),
-        fee_client.get_underlying_tokens(&frodo)
+        vault_client.get_underlying_tokens(&frodo)
     );
 }
 
@@ -134,13 +134,13 @@ fn test_convert_to_assets_agrees_with_blend_vault_client() {
     e.set_default_info();
 
     let (vault, _pool, _samwise, _frodo) = setup_mock(&e);
-    let fee_client = BlendVaultClient::new(&e, &vault);
+    let vault_client = BlendVaultClient::new(&e, &vault);
     let oz_client = VaultContractClient::new(&e, &vault);
 
     for shares in [0_i128, 1, 120_0000000, 600_0000000, 1080_0000000, 1200_0000000] {
         assert_eq!(
             oz_client.convert_to_assets(&shares),
-            fee_client.convert_to_assets(&shares),
+            vault_client.convert_to_assets(&shares),
             "mismatch at shares = {}",
             shares
         );
@@ -155,10 +155,10 @@ fn test_convert_to_assets_reflects_rate_change() {
     e.set_default_info();
 
     let (vault, pool, samwise, _frodo) = setup_mock(&e);
-    let fee_client = BlendVaultClient::new(&e, &vault);
+    let vault_client = BlendVaultClient::new(&e, &vault);
     let oz_client = VaultContractClient::new(&e, &vault);
 
-    let shares = fee_client.get_shares(&samwise);
+    let shares = vault_client.get_shares(&samwise);
     let before = oz_client.convert_to_assets(&shares);
 
     let mock_client = mockpool::MockPoolClient::new(&e, &pool);
@@ -182,6 +182,45 @@ fn test_convert_to_assets_zero_shares() {
     assert_eq!(VaultContractClient::new(&e, &vault).convert_to_assets(&0), 0);
 }
 
+/// convert_to_assets on a vault with total_shares == 0 must not trap: it quotes
+/// the first-deposit rate (shares 1:1 with bTokens, then through b_rate).
+#[test]
+fn test_convert_to_assets_empty_vault() {
+    let e = Env::default();
+    e.mock_all_auths();
+    e.set_default_info();
+
+    let admin = Address::generate(&e);
+    let b_rate = 1_100_000_000_000_i128;
+    let pool = mockpool::register_mock_pool_with_b_rate(&e, b_rate).address;
+    let reserve = Address::generate(&e);
+    let blnd_token = Address::generate(&e);
+    // freshly constructed vault: total_shares == 0, total_b_tokens == 0
+    let vault = register_blend_vault(&e, &admin, &pool, &reserve, &blnd_token);
+
+    assert_eq!(
+        VaultContractClient::new(&e, &vault).convert_to_assets(&1_0000000),
+        1_1000000
+    );
+}
+
+/// convert_to_assets immediately before and immediately after a minimal first
+/// deposit must agree.
+#[test]
+fn test_convert_to_assets_first_deposit_invariant() {
+    let e = Env::default();
+    let (vault, _usdc, frodo, _samwise) = setup_blend(&e);
+    let oz_client = VaultContractClient::new(&e, &vault);
+
+    let probe = 10_0000000_i128;
+    let before = oz_client.convert_to_assets(&probe);
+
+    oz_client.deposit(&1_0000000, &frodo, &frodo, &frodo);
+
+    let after = oz_client.convert_to_assets(&probe);
+    assert_eq!(before, after);
+}
+
 // ── deposit ───────────────────────────────────────────────────────────────────
 
 /// VaultContractClient::deposit now matches BlendVault::deposit's signature
@@ -191,7 +230,7 @@ fn test_deposit_via_contract_client() {
     let e = Env::default();
     let (vault, _usdc, frodo, _samwise) = setup_blend(&e);
 
-    let fee_client = BlendVaultClient::new(&e, &vault);
+    let vault_client = BlendVaultClient::new(&e, &vault);
     let oz_client = VaultContractClient::new(&e, &vault);
 
     let deposit_amount = 1_000_0000000_i128;
@@ -200,10 +239,10 @@ fn test_deposit_via_contract_client() {
     let shares_minted = oz_client.deposit(&deposit_amount, &frodo, &frodo, &frodo);
 
     assert!(shares_minted > 0);
-    assert_eq!(fee_client.get_shares(&frodo), shares_minted);
+    assert_eq!(vault_client.get_shares(&frodo), shares_minted);
     assert_eq!(
         oz_client.convert_to_assets(&shares_minted),
-        fee_client.get_underlying_tokens(&frodo)
+        vault_client.get_underlying_tokens(&frodo)
     );
 }
 
@@ -214,7 +253,7 @@ fn test_deposit_split_receiver_and_from() {
     let e = Env::default();
     let (vault, _usdc, frodo, samwise) = setup_blend(&e);
 
-    let fee_client = BlendVaultClient::new(&e, &vault);
+    let vault_client = BlendVaultClient::new(&e, &vault);
     let oz_client = VaultContractClient::new(&e, &vault);
 
     let deposit_amount = 1_000_0000000_i128;
@@ -223,8 +262,8 @@ fn test_deposit_split_receiver_and_from() {
     let shares_minted = oz_client.deposit(&deposit_amount, &samwise, &frodo, &frodo);
 
     assert!(shares_minted > 0);
-    assert_eq!(fee_client.get_shares(&samwise), shares_minted);
-    assert_eq!(fee_client.get_shares(&frodo), 0);
+    assert_eq!(vault_client.get_shares(&samwise), shares_minted);
+    assert_eq!(vault_client.get_shares(&frodo), 0);
 }
 
 // ── withdraw ──────────────────────────────────────────────────────────────────
@@ -236,11 +275,11 @@ fn test_withdraw_via_contract_client() {
     let e = Env::default();
     let (vault, usdc, frodo, _samwise) = setup_blend(&e);
 
-    let fee_client = BlendVaultClient::new(&e, &vault);
+    let vault_client = BlendVaultClient::new(&e, &vault);
     let oz_client = VaultContractClient::new(&e, &vault);
 
     let deposit_amount = 1_000_0000000_i128;
-    fee_client.deposit(&deposit_amount, &frodo, &frodo, &frodo);
+    vault_client.deposit(&deposit_amount, &frodo, &frodo, &frodo);
 
     let balance_before = usdc.balance(&frodo);
     let withdraw_amount = 500_0000000_i128;
@@ -258,11 +297,11 @@ fn test_withdraw_split_receiver_and_owner() {
     let e = Env::default();
     let (vault, usdc, frodo, samwise) = setup_blend(&e);
 
-    let fee_client = BlendVaultClient::new(&e, &vault);
+    let vault_client = BlendVaultClient::new(&e, &vault);
     let oz_client = VaultContractClient::new(&e, &vault);
 
     let deposit_amount = 1_000_0000000_i128;
-    fee_client.deposit(&deposit_amount, &samwise, &samwise, &samwise);
+    vault_client.deposit(&deposit_amount, &samwise, &samwise, &samwise);
 
     let frodo_balance_before = usdc.balance(&frodo);
     let samwise_balance_before = usdc.balance(&samwise);

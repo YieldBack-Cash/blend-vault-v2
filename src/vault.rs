@@ -9,6 +9,7 @@ use soroban_fixed_point_math::{i128, FixedPoint};
 use soroban_sdk::{contracttype, panic_with_error, unwrap::UnwrapOptimized, Address, Env};
 
 #[derive(Clone)]
+#[cfg_attr(test, derive(Debug))]
 #[contracttype]
 pub struct VaultData {
     /// The timestamp of the last update
@@ -44,6 +45,11 @@ impl VaultData {
 
     /// Converts a share amount to a b_token amount rounding down
     pub fn shares_to_b_tokens_down(&self, amount: i128) -> i128 {
+        if self.total_shares == 0 {
+            // an empty vault mints shares 1:1 with bTokens, so quote the same
+            // rate a first deposit would get
+            return amount;
+        }
         amount
             .fixed_div_floor(self.total_shares, self.total_b_tokens)
             .unwrap_optimized()
@@ -174,6 +180,168 @@ pub fn withdraw(
 }
 
 #[cfg(test)]
+mod proptests {
+    use super::*;
+    use crate::testutils::create_test_blend_vault;
+    use proptest::prelude::*;
+    use soroban_sdk::testutils::Address as _;
+
+    // 100 billion tokens at 7 decimals. Keeps every intermediate product
+    // (amount * total, amount * b_rate) well below i128::MAX so the properties
+    // probe rounding behavior, not overflow traps.
+    const MAX_TOKENS: i128 = 1_000_000_000_000_000_000;
+    // 0.5x to 10x — covers default scenarios (b_rate below 1.0) and years of yield
+    const MIN_B_RATE: i128 = 500_000_000_000;
+    const MAX_B_RATE: i128 = 10_000_000_000_000;
+
+    prop_compose! {
+        /// A reachable vault state: either empty (both totals 0, as constructed
+        /// or after a full drain) or with both totals positive.
+        fn vault_state()(
+            total_shares in 1i128..=MAX_TOKENS,
+            total_b_tokens in 1i128..=MAX_TOKENS,
+            b_rate in MIN_B_RATE..=MAX_B_RATE,
+            empty in any::<bool>(),
+        ) -> VaultData {
+            VaultData {
+                last_update_timestamp: 0,
+                b_rate,
+                total_shares: if empty { 0 } else { total_shares },
+                total_b_tokens: if empty { 0 } else { total_b_tokens },
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn conversions_never_panic(vault in vault_state(), amount in 0i128..=MAX_TOKENS) {
+            vault.b_tokens_to_shares_down(amount);
+            vault.b_tokens_to_shares_up(amount);
+            vault.shares_to_b_tokens_down(amount);
+            vault.b_tokens_to_underlying_down(amount);
+            vault.underlying_to_b_tokens_down(amount);
+            vault.underlying_to_b_tokens_up(amount);
+        }
+
+        /// Minting shares from bTokens and converting back never gains bTokens.
+        #[test]
+        fn share_round_trip_never_gains(vault in vault_state(), b_tokens in 0i128..=MAX_TOKENS) {
+            let shares = vault.b_tokens_to_shares_down(b_tokens);
+            prop_assert!(vault.shares_to_b_tokens_down(shares) <= b_tokens);
+        }
+
+        /// Converting underlying to bTokens and back never gains underlying.
+        #[test]
+        fn underlying_round_trip_never_gains(vault in vault_state(), amount in 0i128..=MAX_TOKENS) {
+            let b_tokens = vault.underlying_to_b_tokens_down(amount);
+            prop_assert!(vault.b_tokens_to_underlying_down(b_tokens) <= amount);
+        }
+
+        /// The up and down variants bracket the exact ratio and differ by at most 1.
+        #[test]
+        fn rounding_up_within_one_of_down(vault in vault_state(), amount in 0i128..=MAX_TOKENS) {
+            let shares_down = vault.b_tokens_to_shares_down(amount);
+            let shares_up = vault.b_tokens_to_shares_up(amount);
+            prop_assert!(shares_down <= shares_up);
+            prop_assert!(shares_up - shares_down <= 1);
+
+            let b_tokens_down = vault.underlying_to_b_tokens_down(amount);
+            let b_tokens_up = vault.underlying_to_b_tokens_up(amount);
+            prop_assert!(b_tokens_down <= b_tokens_up);
+            prop_assert!(b_tokens_up - b_tokens_down <= 1);
+        }
+
+        /// More shares never convert to fewer bTokens (and likewise for the
+        /// other down-rounding conversions).
+        #[test]
+        fn conversions_monotonic(
+            vault in vault_state(),
+            a in 0i128..=MAX_TOKENS,
+            b in 0i128..=MAX_TOKENS,
+        ) {
+            let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+            prop_assert!(vault.shares_to_b_tokens_down(lo) <= vault.shares_to_b_tokens_down(hi));
+            prop_assert!(vault.b_tokens_to_shares_down(lo) <= vault.b_tokens_to_shares_down(hi));
+            prop_assert!(vault.b_tokens_to_underlying_down(lo) <= vault.b_tokens_to_underlying_down(hi));
+        }
+    }
+
+    prop_compose! {
+        /// Like `vault_state`, but with total_shares held within 0.5x-2x of
+        /// total_b_tokens. Deposits mint pro-rata, so real vaults never stray
+        /// far from 1:1; unbounded ratios would overflow i128 on intermediate
+        /// products in states the contract can't actually reach.
+        fn proportional_vault_state()(
+            total_b_tokens in 1i128..=MAX_TOKENS,
+            ratio_bps in 5000i128..=20000,
+            b_rate in MIN_B_RATE..=MAX_B_RATE,
+            empty in any::<bool>(),
+        ) -> VaultData {
+            VaultData {
+                last_update_timestamp: 0,
+                b_rate,
+                total_shares: if empty { 0 } else { (total_b_tokens * ratio_bps / 10000).max(1) },
+                total_b_tokens: if empty { 0 } else { total_b_tokens },
+            }
+        }
+    }
+
+    proptest! {
+        // Each case registers contracts in a fresh Env, so run fewer cases.
+        #![proptest_config(ProptestConfig::with_cases(64))]
+
+        /// With an unchanged b_rate, a deposit followed by withdrawing the full
+        /// position can never extract more underlying than was deposited —
+        /// neither immediately (position value) nor via the withdraw path.
+        #[test]
+        fn deposit_then_full_withdraw_never_profits(
+            initial_state in proportional_vault_state(),
+            amount in 1_0000000i128..=MAX_TOKENS,
+        ) {
+            // skip dust deposits the contract (correctly) rejects
+            let b_tokens = initial_state.underlying_to_b_tokens_down(amount);
+            prop_assume!(b_tokens > 0);
+            prop_assume!(initial_state.b_tokens_to_shares_down(b_tokens) > 0);
+
+            let e = Env::default();
+            e.mock_all_auths();
+            let bombadil = Address::generate(&e);
+            let samwise = Address::generate(&e);
+            let (vault_address, pool, asset) =
+                create_test_blend_vault(&e, &bombadil, Some(initial_state.b_rate));
+
+            let (position_value, withdrawn, residual_value) =
+                e.as_contract(&vault_address, || {
+                    storage::set_vault_data(&e, &initial_state);
+
+                    let (_, shares_minted) = deposit(&e, &pool, &asset, &samwise, amount);
+
+                    let v = storage::get_vault_data(&e);
+                    let position_value =
+                        v.b_tokens_to_underlying_down(v.shares_to_b_tokens_down(shares_minted));
+
+                    if position_value == 0 {
+                        return (0, 0, 0);
+                    }
+                    let (withdrawn, _, _) =
+                        withdraw(&e, &pool, &asset, &samwise, position_value);
+
+                    // value of any shares left behind by rounding
+                    let v = storage::get_vault_data(&e);
+                    let remaining_shares = storage::get_vault_shares(&e, &samwise);
+                    let residual_value = v
+                        .b_tokens_to_underlying_down(v.shares_to_b_tokens_down(remaining_shares));
+
+                    (position_value, withdrawn, residual_value)
+                });
+
+            prop_assert!(position_value <= amount);
+            prop_assert!(withdrawn + residual_value <= amount);
+        }
+    }
+}
+
+#[cfg(test)]
 mod generic_tests {
     use super::*;
     use crate::testutils::{create_test_blend_vault, mockpool::MockPoolClient, EnvTestUtils};
@@ -255,6 +423,12 @@ mod generic_tests {
         vault.total_b_tokens = 0;
         let b_tokens = vault.shares_to_b_tokens_down(2_0000000);
         assert_eq!(b_tokens, 0);
+
+        // returns amount 1:1 if total_shares is 0 (empty vault, first deposit rate)
+        vault.total_shares = 0;
+        vault.total_b_tokens = 0;
+        let b_tokens = vault.shares_to_b_tokens_down(2_0000000);
+        assert_eq!(b_tokens, 2_0000000);
     }
 
     #[test]

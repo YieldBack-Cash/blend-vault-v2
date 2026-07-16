@@ -1,12 +1,14 @@
 #![cfg(test)]
 
 use crate::storage::ONE_DAY_LEDGERS;
-use crate::testutils::{create_blend_pool, mocksoroswap, register_blend_vault, EnvTestUtils};
+use crate::testutils::{
+    create_blend_pool, mocksoroswap, register_blend_vault, setup_pool_util_rate, EnvTestUtils,
+};
 use crate::BlendVaultClient;
-use blend_contract_sdk::pool::{Client as PoolClient, Request};
+use blend_contract_sdk::pool::Client as PoolClient;
 use blend_contract_sdk::testutils::BlendFixture;
 use sep_41_token::testutils::MockTokenClient;
-use soroban_sdk::{testutils::Address as _, vec, Address, Env};
+use soroban_sdk::{testutils::Address as _, Address, Env};
 
 /// Full claim_emissions flow using a mock Soroswap router.
 ///
@@ -47,18 +49,7 @@ fn test_claim_emissions_swaps_blnd_for_underlying() {
     blend_vault_client.set_router(&router);
 
     // Establish pool liquidity so the vault's supply position accrues against real utilisation
-    pool_client.submit(
-        &bombadil,
-        &bombadil,
-        &bombadil,
-        &vec![
-            &e,
-            Request { address: usdc.clone(), amount: 200_000_0000000, request_type: 2 },
-            Request { address: usdc.clone(), amount: 100_000_0000000, request_type: 4 },
-            Request { address: xlm.clone(),  amount: 200_000_0000000, request_type: 2 },
-            Request { address: xlm.clone(),  amount: 100_000_0000000, request_type: 4 },
-        ],
-    );
+    setup_pool_util_rate(&e, &pool, &bombadil, &usdc, &xlm, 100_000_0000000);
 
     // Frodo deposits into vault — vault now has a supply position in the pool
     let deposit = 10_000_0000000_i128;

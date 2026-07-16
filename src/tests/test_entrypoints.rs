@@ -12,6 +12,38 @@ use soroban_sdk::{
     vec, Address, Env, IntoVal, Symbol,
 };
 
+const INIT_B_RATE: i128 = 1_000_000_000_000;
+
+/// Registers a vault administered by `admin`, backed by a mock pool at
+/// `INIT_B_RATE`. Returns (vault address, vault client, mock pool client).
+fn setup<'a>(
+    e: &'a Env,
+    admin: &Address,
+) -> (Address, BlendVaultClient<'a>, mockpool::MockPoolClient<'a>) {
+    let pool_client = mockpool::register_mock_pool_with_b_rate(e, INIT_B_RATE);
+    let reserve = Address::generate(e);
+    let blnd_token = Address::generate(e);
+    let vault_address = register_blend_vault(e, admin, &pool_client.address, &reserve, &blnd_token);
+    let vault_client = BlendVaultClient::new(e, &vault_address);
+    (vault_address, vault_client, pool_client)
+}
+
+/// Writes vault state of 1000 bTokens / 1200 shares, split 10% to samwise
+/// and 90% to frodo.
+fn seed_vault_positions(e: &Env, vault_address: &Address, samwise: &Address, frodo: &Address) {
+    e.as_contract(vault_address, || {
+        let vault_data = VaultData {
+            total_b_tokens: 1000_0000000,
+            total_shares: 1200_0000000,
+            b_rate: INIT_B_RATE,
+            last_update_timestamp: e.ledger().timestamp(),
+        };
+        storage::set_vault_data(e, &vault_data);
+        storage::set_vault_shares(e, samwise, 120_0000000);
+        storage::set_vault_shares(e, frodo, 1080_0000000);
+    });
+}
+
 #[test]
 fn test_constructor_ok() {
     let e = Env::default();
@@ -20,8 +52,9 @@ fn test_constructor_ok() {
     let samwise = Address::generate(&e);
     let frodo = Address::generate(&e);
 
-    let init_b_rate = 1_000_000_000_000;
-    let pool = mockpool::register_mock_pool_with_b_rate(&e, init_b_rate).address;
+    // registered inline (not via `setup`) so the constructor args can be
+    // asserted against the recorded authorization below
+    let pool = mockpool::register_mock_pool_with_b_rate(&e, INIT_B_RATE).address;
     let reserve = Address::generate(&e);
     let blnd_token = Address::generate(&e);
     let vault_address = register_blend_vault(&e, &samwise, &pool, &reserve, &blnd_token);
@@ -56,7 +89,7 @@ fn test_constructor_ok() {
     let vault_data = client.get_vault();
     assert_eq!(vault_data.total_b_tokens, 0);
     assert_eq!(vault_data.total_shares, 0);
-    assert_eq!(vault_data.b_rate, init_b_rate);
+    assert_eq!(vault_data.b_rate, INIT_B_RATE);
     assert_eq!(vault_data.last_update_timestamp, e.ledger().timestamp());
 }
 
@@ -69,28 +102,9 @@ fn test_get_b_tokens() {
     let samwise = Address::generate(&e);
     let frodo = Address::generate(&e);
 
-    let init_b_rate = 1_000_000_000_000;
-    let pool = mockpool::register_mock_pool_with_b_rate(&e, init_b_rate).address;
-    let reserve = Address::generate(&e);
-    let blnd_token = Address::generate(&e);
+    let (vault_address, vault_client, mock_client) = setup(&e, &samwise);
+    seed_vault_positions(&e, &vault_address, &samwise, &frodo);
 
-    let vault_address = register_blend_vault(&e, &samwise, &pool, &reserve, &blnd_token);
-    let vault_client = BlendVaultClient::new(&e, &vault_address);
-    let mock_client = mockpool::MockPoolClient::new(&e, &pool);
-
-    e.as_contract(&vault_address, || {
-        let vault_data = VaultData {
-            total_b_tokens: 1000_0000000,
-            total_shares: 1200_0000000,
-            b_rate: init_b_rate,
-            last_update_timestamp: e.ledger().timestamp(),
-        };
-        storage::set_vault_data(&e, &vault_data);
-
-        // samwise owns 10% of the pool, frodo owns 90%
-        storage::set_vault_shares(&e, &samwise, 120_0000000);
-        storage::set_vault_shares(&e, &frodo, 1080_0000000);
-    });
     assert_eq!(vault_client.get_b_tokens(&samwise), 100_0000000);
     assert_eq!(vault_client.get_b_tokens(&frodo), 900_0000000);
 
@@ -106,7 +120,7 @@ fn test_get_b_tokens() {
         let reserve_vault = storage::get_vault_data(&e);
         assert_eq!(reserve_vault.total_b_tokens, 1000_0000000);
         assert_eq!(reserve_vault.total_shares, 1200_0000000);
-        assert_eq!(reserve_vault.b_rate, 1_000_000_000_000);
+        assert_eq!(reserve_vault.b_rate, INIT_B_RATE);
     });
 
     // Should return 0 if user doesn't have any shares
@@ -123,29 +137,10 @@ fn test_underlying_wrappers() {
     let samwise = Address::generate(&e);
     let frodo = Address::generate(&e);
 
-    let init_b_rate = 1_000_000_000_000;
-    let pool = mockpool::register_mock_pool_with_b_rate(&e, init_b_rate).address;
-    let reserve = Address::generate(&e);
-    let blnd_token = Address::generate(&e);
+    let (vault_address, vault_client, mock_client) = setup(&e, &samwise);
+    seed_vault_positions(&e, &vault_address, &samwise, &frodo);
 
-    let vault_address = register_blend_vault(&e, &samwise, &pool, &reserve, &blnd_token);
-    let vault_client = BlendVaultClient::new(&e, &vault_address);
-    let mock_client = mockpool::MockPoolClient::new(&e, &pool);
-
-    e.as_contract(&vault_address, || {
-        let vault_data = VaultData {
-            total_b_tokens: 1000_0000000,
-            total_shares: 1200_0000000,
-            b_rate: init_b_rate,
-            last_update_timestamp: e.ledger().timestamp(),
-        };
-        storage::set_vault_data(&e, &vault_data);
-        // samwise owns 10% of the pool, frodo owns 90%
-        storage::set_vault_shares(&e, &samwise, 120_0000000);
-        storage::set_vault_shares(&e, &frodo, 1080_0000000);
-    });
-
-    let total_underlying_value = init_b_rate * 1000_0000000 / SCALAR_12;
+    let total_underlying_value = INIT_B_RATE * 1000_0000000 / SCALAR_12;
     let frodo_underlying = vault_client.get_underlying_tokens(&frodo);
     let samwise_underlying = vault_client.get_underlying_tokens(&samwise);
 
@@ -185,13 +180,7 @@ fn test_set_admin() {
     let samwise = Address::generate(&e);
     let frodo = Address::generate(&e);
 
-    let init_b_rate = 1_000_000_000_000;
-    let pool = mockpool::register_mock_pool_with_b_rate(&e, init_b_rate).address;
-    let reserve = Address::generate(&e);
-    let blnd_token = Address::generate(&e);
-
-    let vault_address = register_blend_vault(&e, &samwise, &pool, &reserve, &blnd_token);
-    let vault_client = BlendVaultClient::new(&e, &vault_address);
+    let (vault_address, vault_client, _mock_client) = setup(&e, &samwise);
 
     e.as_contract(&vault_address, || {
         assert_eq!(storage::get_admin(&e), samwise.clone());
@@ -248,13 +237,7 @@ fn test_set_signer() {
     let frodo = Address::generate(&e);
     let merry = Address::generate(&e);
 
-    let init_b_rate = 1_000_000_000_000;
-    let pool = mockpool::register_mock_pool_with_b_rate(&e, init_b_rate).address;
-    let reserve = Address::generate(&e);
-    let blnd_token = Address::generate(&e);
-
-    let vault_address = register_blend_vault(&e, &samwise, &pool, &reserve, &blnd_token);
-    let vault_client = BlendVaultClient::new(&e, &vault_address);
+    let (vault_address, vault_client, _mock_client) = setup(&e, &samwise);
     vault_client.set_signer(&Some(merry.clone()));
 
     e.as_contract(&vault_address, || {

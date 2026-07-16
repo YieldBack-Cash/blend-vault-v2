@@ -1,11 +1,13 @@
 #![cfg(test)]
 
-use crate::testutils::{assert_approx_eq_abs, create_blend_pool, register_blend_vault, EnvTestUtils};
+use crate::testutils::{
+    assert_approx_eq_abs, create_blend_pool, register_blend_vault, setup_pool_util_rate,
+    EnvTestUtils,
+};
 use crate::BlendVaultClient;
-use blend_contract_sdk::pool::{Client as PoolClient, Request};
 use blend_contract_sdk::testutils::BlendFixture;
 use sep_41_token::testutils::MockTokenClient;
-use soroban_sdk::{testutils::Address as _, vec, Address, Env};
+use soroban_sdk::{testutils::Address as _, Address, Env};
 
 // ── fixture ───────────────────────────────────────────────────────────────────
 
@@ -36,21 +38,9 @@ fn setup(e: &Env, frodo_deposit: i128) -> Fixture<'_> {
         &usdc_client,
         &MockTokenClient::new(e, &xlm),
     );
-    let pool_client = PoolClient::new(e, &pool);
 
     // bombadil supplies + borrows to hold 50% util rate → ~5% supply APR
-    pool_client.mock_all_auths().submit(
-        &bombadil,
-        &bombadil,
-        &bombadil,
-        &vec![
-            e,
-            Request { address: usdc.clone(), amount: 200_000_0000000, request_type: 2 },
-            Request { address: usdc.clone(), amount: 100_000_0000000, request_type: 4 },
-            Request { address: xlm.clone(),  amount: 200_000_0000000, request_type: 2 },
-            Request { address: xlm.clone(),  amount: 100_000_0000000, request_type: 4 },
-        ],
-    );
+    setup_pool_util_rate(e, &pool, &bombadil, &usdc, &xlm, 100_000_0000000);
 
     let blend_vault = register_blend_vault(e, &gandalf, &pool, &usdc, &blnd);
     let blend_vault_client = BlendVaultClient::new(e, &blend_vault);
