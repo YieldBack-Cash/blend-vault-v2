@@ -179,6 +179,61 @@ pub fn withdraw(
     (underlying_amount, b_tokens_amount, share_amount)
 }
 
+/// Redeem an exact share amount from the vault. Does not perform the call to the
+/// pool to withdraw the tokens.
+///
+/// Unlike [`withdraw`], the share amount is not clamped to the user's balance:
+/// the caller asked for an exact number of shares, so an over-large request is
+/// an error rather than a hint.
+///
+/// ### Returns
+/// * `(i128, i128)` - (
+///         The underlying to withdraw from the pool,
+///         The amount of b_tokens burned from the vault
+///     )
+///
+/// ### Panics
+/// * If the share amount is less than or equal to 0
+/// * If the resulting underlying amount rounds down to 0
+/// * If the user holds fewer than `shares` shares
+pub fn redeem(
+    e: &Env,
+    pool: &Address,
+    asset: &Address,
+    user: &Address,
+    shares: i128,
+) -> (i128, i128) {
+    let mut vault = get_vault_updated(e, pool, asset);
+    let user_shares = storage::get_vault_shares(e, user);
+
+    require_positive(e, shares, BlendVaultError::InvalidSharesBurnt);
+    if shares > user_shares {
+        panic_with_error!(e, BlendVaultError::BalanceError);
+    }
+
+    let b_tokens_down = vault.shares_to_b_tokens_down(shares);
+    let underlying_amount = vault.b_tokens_to_underlying_down(b_tokens_down);
+    require_positive(e, underlying_amount, BlendVaultError::InvalidBTokensBurnt);
+
+    // The blend pool rounds the b_tokens it burns UP from the underlying amount
+    // requested, so the vault's own accounting has to use the same figure or
+    // total_b_tokens drifts above the real position. This is the same reason
+    // `withdraw` recomputes with `_up` in its clamp branch above.
+    let b_tokens_amount = vault.underlying_to_b_tokens_up(underlying_amount);
+
+    if vault.total_shares < shares || vault.total_b_tokens < b_tokens_amount {
+        panic_with_error!(e, BlendVaultError::InsufficientReserves);
+    }
+
+    vault.total_shares -= shares;
+    vault.total_b_tokens -= b_tokens_amount;
+
+    storage::set_vault_shares(e, user, user_shares - shares);
+    storage::set_vault_data(e, &vault);
+
+    (underlying_amount, b_tokens_amount)
+}
+
 #[cfg(test)]
 mod proptests {
     use super::*;

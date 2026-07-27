@@ -15,6 +15,29 @@ use soroban_sdk::{
 #[contract]
 pub struct BlendVault;
 
+/// Authorizes `operator` to burn `shares` of `owner`'s position.
+///
+/// The caller has already established that `operator` authorized the call. When
+/// `operator` is not `owner`, it must additionally hold a SEP-41 allowance from
+/// `owner` covering `shares`, which is consumed here — the same delegation
+/// `transfer_from` uses, and the ERC-4626/SEP-56 rule for a third-party
+/// `operator`. Without this, `operator` is the only authenticated party in the
+/// call and any address could name an arbitrary `owner`.
+///
+/// Note the early return rather than an unconditional `owner.require_auth()`:
+/// a second `require_auth` on an address already authorized in the same frame
+/// is a host error (`Auth, ExistingValue`), not a no-op.
+fn spend_operator_allowance(e: &Env, owner: &Address, operator: &Address, shares: i128) {
+    if owner == operator {
+        return;
+    }
+    let (allowance, expiration) = storage::get_allowance_with_expiration(e, owner, operator);
+    if allowance < shares {
+        panic_with_error!(e, BlendVaultError::BalanceError);
+    }
+    storage::set_allowance(e, owner, operator, allowance - shares, expiration);
+}
+
 #[contractimpl]
 impl BlendVault {
     /// Initializes the contract with an admin, blend pool, and asset.
@@ -109,6 +132,11 @@ impl BlendVault {
     /// Returns the vault's blend pool and asset addresses.
     pub fn get_config(e: Env) -> (Address, Address) {
         (storage::get_pool(&e), storage::get_asset(&e))
+    }
+
+    /// Returns the underlying asset address. SEP-56 compatible.
+    pub fn query_asset(e: Env) -> Address {
+        storage::get_asset(&e)
     }
 
     /// Returns the current vault data with an up-to-date bRate.
@@ -382,6 +410,9 @@ impl BlendVault {
         let asset = storage::get_asset(&e);
         let (withdraw_amount, b_tokens_burnt, burnt_shares) =
             vault::withdraw(&e, &pool, &asset, &owner, assets);
+        // burnt_shares is only known once the clamp above has run, so the
+        // allowance is consumed here; a panic reverts the burn with it.
+        spend_operator_allowance(&e, &owner, &operator, burnt_shares);
         pool::withdraw(&e, &pool, &asset, &receiver, withdraw_amount);
 
         BlendVaultEvents::vault_withdraw(
@@ -396,4 +427,42 @@ impl BlendVault {
         burnt_shares
     }
 
+    /// Redeems an exact number of vault shares for underlying tokens.
+    ///
+    /// Where `withdraw` is asset-denominated and clamps down to the owner's
+    /// balance, `redeem` burns exactly `shares` and fails if the owner holds
+    /// fewer. A caller that tracks its position in shares can therefore zero it
+    /// out exactly, instead of converting to assets first and stranding — or
+    /// over-burning — the unit or two that the round trip rounds away.
+    ///
+    /// ### Arguments
+    /// * `shares` - The exact number of vault shares to burn
+    /// * `receiver` - The address that will receive the withdrawn tokens
+    /// * `owner` - The address whose vault shares will be burned
+    /// * `operator` - The address initiating the redemption
+    ///
+    /// ### Returns
+    /// * `i128` - The amount of underlying tokens sent to the receiver
+    pub fn redeem(e: Env, shares: i128, receiver: Address, owner: Address, operator: Address) -> i128 {
+        storage::extend_instance(&e);
+        operator.require_auth();
+        require_positive(&e, shares, BlendVaultError::InvalidSharesBurnt);
+        spend_operator_allowance(&e, &owner, &operator, shares);
+
+        let pool = storage::get_pool(&e);
+        let asset = storage::get_asset(&e);
+        let (withdraw_amount, b_tokens_burnt) = vault::redeem(&e, &pool, &asset, &owner, shares);
+        pool::withdraw(&e, &pool, &asset, &receiver, withdraw_amount);
+
+        BlendVaultEvents::vault_withdraw(
+            &e,
+            &pool,
+            &asset,
+            &owner,
+            withdraw_amount,
+            shares,
+            b_tokens_burnt,
+        );
+        withdraw_amount
+    }
 }

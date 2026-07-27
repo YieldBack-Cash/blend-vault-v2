@@ -161,6 +161,36 @@ pub(crate) fn setup_pool_util_rate(
     );
 }
 
+/// Deploys a real Blend deployment, a pool holding usdc and xlm at ~50%
+/// utilization, and a vault over the pool's usdc reserve. Unlike the mock pool,
+/// this exercises the real `submit` path, so supply and withdraw actually move
+/// tokens and the pool's own rounding applies.
+///
+/// Mocks all auths and advances the ledger by a day to accrue interest.
+///
+/// Returns (vault address, usdc address).
+pub(crate) fn create_funded_blend_vault(e: &Env) -> (Address, Address) {
+    e.cost_estimate().budget().reset_unlimited();
+    e.mock_all_auths();
+    e.set_default_info();
+
+    let bombadil = Address::generate(e);
+    let blnd = e.register_stellar_asset_contract_v2(bombadil.clone()).address();
+    let usdc = e.register_stellar_asset_contract_v2(bombadil.clone()).address();
+    let xlm = e.register_stellar_asset_contract_v2(bombadil.clone()).address();
+    let usdc_client = MockTokenClient::new(e, &usdc);
+    let xlm_client = MockTokenClient::new(e, &xlm);
+
+    let blend_fixture = BlendFixture::deploy(e, &bombadil, &blnd, &usdc);
+    let pool = create_blend_pool(e, &blend_fixture, &bombadil, &usdc_client, &xlm_client);
+    let vault = register_blend_vault(e, &bombadil, &pool, &usdc, &blnd);
+
+    setup_pool_util_rate(e, &pool, &bombadil, &usdc, &xlm, 100_000_0000000);
+    e.jump(ONE_DAY_LEDGERS);
+
+    (vault, usdc)
+}
+
 pub trait EnvTestUtils {
     /// Jump the env by the given amount of ledgers. Assumes 5 seconds per ledger.
     fn jump(&self, ledgers: u32);

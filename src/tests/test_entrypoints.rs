@@ -83,7 +83,8 @@ fn test_constructor_ok() {
     let client = BlendVaultClient::new(&e, &vault_address);
     client.set_signer(&Some(frodo.clone()));
 
-    assert_eq!(client.get_config(), (pool, reserve));
+    assert_eq!(client.get_config(), (pool.clone(), reserve.clone()));
+    assert_eq!(client.query_asset(), reserve);
     assert_eq!(client.get_admin(), samwise);
     assert_eq!(client.get_signer(), Some(frodo));
     let vault_data = client.get_vault();
